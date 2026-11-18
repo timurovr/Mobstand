@@ -1,0 +1,23 @@
+{
+  "item.mobstands.echo_arrow": "Echoing Arrow",
+  "entity.mobstands.stand": "Stand",
+  "entity.mobstands.stand_projectile": "Stand Projectile",
+  "key.categories.mobstands": "Mob Stands",
+  "key.mobstands.summon": "Summon / Dismiss Stand",
+  "key.mobstands.basic": "Stand Basic Attack",
+  "key.mobstands.ability1": "Stand Ability 1",
+  "key.mobstands.ability2": "Stand Ability 2",
+  "key.mobstands.ultimate": "Stand Ultimate",
+  "subtitles.mobstands.stand.time_stop": "Time stops",
+  "subtitles.mobstands.stand.mandom": "Time winds back",
+  "key.mobstands.ability4": "Stand Ability 4",
+  "key.mobstands.info": "Open Stand Info",
+  "key.mobstands.pose": "Strike Stand Pose",
+  "screen.mobstands.info": "Stand Information",
+  "subtitles.mobstands.stand.summon": "Stand appears",
+  "subtitles.mobstands.stand.summon_punch": "Stand strikes",
+  "subtitles.mobstands.stand.double_shot": "Stand fires a bonus arrow",
+  "subtitles.mobstands.stand.spin": "Spin crackles",
+  "item.mobstands.steel_ball": "Steel Ball",
+  "entity.mobstands.heart_attack": "Sheer Heart Attack"
+}

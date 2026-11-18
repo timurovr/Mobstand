@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/spectral_arrow",
+    "layer1": "mobstands:item/echo_arrow_fletching",
+    "layer2": "mobstands:item/echo_arrow_gem"
+  }
+}

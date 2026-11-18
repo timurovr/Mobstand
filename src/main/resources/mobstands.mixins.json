@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.mobstands.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "PrimaryLevelDataMixin",
+    "TickRateManagerMixin"
+  ],
+  "client": [
+    "WorldOpenFlowsMixin",
+    "HumanoidModelMixin",
+    "ItemInHandLayerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

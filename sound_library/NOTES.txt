@@ -1,0 +1,16 @@
+Mob Stands - sound library (NOT in the mod yet; kept for later)
+From: iron-experience-requiem sound design concept clip
+
+In the mod now:
+  A  -> summon then punch right away (src/main/resources/assets/mobstands/sounds/stand/summon_punch.ogg)
+  C  -> Stand appears, random variant 1 (summon_1.ogg)
+  E  -> gear sound (first part of E) = Stand appears, random variant 2 (summon_2.ogg)
+  E  -> blade sound (after the gear) = summon sound for intimidating Stands: Warden, Enderman, Iron Golem (summon_menacing.ogg)
+
+Waiting for a decision:
+  B_unassigned.mp3                 - no use picked yet
+  D_shot_for_future_ability.mp3    - the shot only (villager part removed), for a future ability
+  E_rest_heavy_hit_after_blade.mp3 - last part of E (heavy low hit after the blade)
+  F_later.mp3, G_later.mp3         - kept for later
+
+Note: taken from a YouTube video. Fine for personal play; replace before publishing the mod.

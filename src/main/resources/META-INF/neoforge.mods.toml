@@ -1,0 +1,32 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "MIT"
+
+[[mods]]
+modId = "mobstands"
+version = "1.0.0"
+displayName = "Mob Stands"
+description = '''
+Every player can awaken a Minecraft mob as a personal, JoJo-style Stand.
+Summon it, fight alongside it, unlock abilities and level it up.
+'''
+
+[[accessTransformers]]
+file = "META-INF/accesstransformer.cfg"
+
+[[mixins]]
+config = "mobstands.mixins.json"
+
+[[dependencies.mobstands]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mobstands]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.21.2)"
+ordering = "NONE"
+side = "BOTH"

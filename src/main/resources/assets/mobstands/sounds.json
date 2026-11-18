@@ -1,0 +1,63 @@
+{
+  "stand.summon": {
+    "subtitle": "subtitles.mobstands.stand.summon",
+    "sounds": [
+      "mobstands:stand/summon_1",
+      "mobstands:stand/summon_2"
+    ]
+  },
+  "stand.summon_menacing": {
+    "subtitle": "subtitles.mobstands.stand.summon",
+    "sounds": [
+      "mobstands:stand/summon_menacing"
+    ]
+  },
+  "stand.combo_punch1": {
+    "subtitle": "subtitles.mobstands.stand.summon_punch",
+    "sounds": [
+      "mobstands:stand/combo_punch1"
+    ]
+  },
+  "stand.combo_full": {
+    "subtitle": "subtitles.mobstands.stand.summon_punch",
+    "sounds": [
+      "mobstands:stand/combo_full"
+    ]
+  },
+  "stand.double_shot": {
+    "subtitle": "subtitles.mobstands.stand.double_shot",
+    "sounds": [
+      "mobstands:stand/double_shot"
+    ]
+  },
+  "stand.combo_punch2": {
+    "subtitle": "subtitles.mobstands.stand.summon_punch",
+    "sounds": [
+      "mobstands:stand/combo_punch2"
+    ]
+  },
+  "stand.mandom": {
+    "subtitle": "subtitles.mobstands.stand.mandom",
+    "sounds": [
+      "mobstands:stand/mandom"
+    ]
+  },
+  "stand.time_stop": {
+    "subtitle": "subtitles.mobstands.stand.time_stop",
+    "sounds": [
+      "mobstands:stand/time_stop"
+    ]
+  },
+  "stand.spin_hamon": {
+    "subtitle": "subtitles.mobstands.stand.spin",
+    "sounds": [
+      "mobstands:stand/spin_hamon"
+    ]
+  },
+  "stand.spin_crackle": {
+    "subtitle": "subtitles.mobstands.stand.spin",
+    "sounds": [
+      "mobstands:stand/spin_crackle"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+.gradle/
+build/
+run/
+.idea/
+*.iml
+
+# logs and leftovers
+terminal.log*
+runClient
+_removed/
+.DS_Store
