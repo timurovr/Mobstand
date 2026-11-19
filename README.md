@@ -75,9 +75,9 @@ on in the config. Max level is 10. XP comes from using abilities and from kills.
 ## Requiems
 | Requiem | From | How to earn it | Abilities |
 |---|---|---|---|
-| **The Ender World** | Enderman | Requiem Trial: kill the Ender Dragon with your Stand out, spend a full day in the End, then pose at midnight | Void Jab, Barrage, Time Skip, **Time Stop** |
-| **Gilded Silence** | Piglin | Requiem Trial (shown in the Stand menu) | Steal Sound, Switch Sound, Release Sound, Go Beyond |
-| **Guardian Experience Requiem** | Iron Golem | Use a Stand Arrow during a raid at 3 hearts or less: a 50/50. On a fail the arrow breaks, and there's a 15% chance your Stand drops to level 1 | Requiem Fist, MUDA Barrage, **Return to Zero**, Life Giver, Golden Barrier |
+| **The Ender World** | Enderman Stand | Requiem Trial: kill the Ender Dragon with your Stand out, spend a full day in the End, then pose at midnight | Void Jab, Barrage, Time Skip, **Time Stop** |
+| **Gilded Silence** (a Piglin Brute) | Piglin Stand | Requiem Trial (shown in the Stand menu) | Steal Sound, Switch Sound, Release Sound, Go Beyond |
+| **Guardian Experience Requiem** | Iron Golem Stand | Use a Stand Arrow during a raid at 3 hearts or less: a 50/50. On a fail the arrow breaks, and there's a 15% chance your Stand drops to level 1 | Requiem Fist, MUDA Barrage, **Return to Zero**, Life Giver, Golden Barrier |
 
 * **Time Stop** uses the game's real tick freeze. Arrows stop in the air, and nothing frozen can hurt you.
 * **Gilded Silence** steals a creature's sound with a sculk vibration (around 45 sounds, from creepers to slimes),
