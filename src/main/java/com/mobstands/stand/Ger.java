@@ -365,6 +365,10 @@ public final class Ger {
 
     public static boolean goldenBarrier(AbilityContext c) {
         BARRIERS.add(new Barrier(c.level, c.owner.position(), c.level.getGameTime() + BARRIER_TICKS));
+        // Everyone nearby sees it: a curtain of golden light falling from the sky, like Love Train.
+        PacketDistributor.sendToPlayersTrackingEntityAndSelf(c.owner, new com.mobstands.network.BarrierPayload(
+                c.owner.getX(), c.owner.getY(), c.owner.getZ(), (float) BARRIER_RADIUS, BARRIER_TICKS, c.owner.getRandom().nextLong()));
+        c.sound(SoundEvents.AMETHYST_BLOCK_RESONATE, 1.5F, 0.6F);
         c.sound(SoundEvents.BEACON_ACTIVATE, 1.5F, 1.2F);
         c.sound(SoundEvents.BELL_BLOCK, 1.5F, 0.8F);
         c.owner.displayClientMessage(Component.literal("Nothing here will be harmed.").withStyle(s -> s.withColor(0xF2C744).withItalic(true)), true);
@@ -393,15 +397,7 @@ public final class Ger {
         BARRIERS.removeIf(b -> b.level == sl && now >= b.until);
         for (Barrier b : BARRIERS) {
             if (b.level != sl) continue;
-            // The dome: a shimmering golden shell.
-            if (now % 4L == 0L) {
-                for (int i = 0; i < 24; i++) {
-                    double th = sl.random.nextDouble() * Math.PI * 2.0D, ph = Math.acos(sl.random.nextDouble());
-                    double x = Math.sin(ph) * Math.cos(th), y = Math.cos(ph), z = Math.sin(ph) * Math.sin(th);
-                    sl.sendParticles(new DustParticleOptions(new Vector3f(1.0F, 0.84F, 0.3F), 1.2F),
-                            b.center.x + x * BARRIER_RADIUS, b.center.y + y * BARRIER_RADIUS, b.center.z + z * BARRIER_RADIUS, 1, 0.0D, 0.0D, 0.0D, 0.0D);
-                }
-            }
+            // (The curtain of light itself is drawn on each client - see LoveTrainFx.)
             // Raiders and monsters are pushed back out.
             for (LivingEntity e : sl.getEntitiesOfClass(LivingEntity.class, new net.minecraft.world.phys.AABB(b.center, b.center).inflate(BARRIER_RADIUS),
                     e -> (e instanceof Raider || e instanceof net.minecraft.world.entity.monster.Enemy) && !isBoss(e) && !e.getTags().contains(LOOP_TAG))) {

@@ -768,7 +768,8 @@ public class StandEntity extends Entity {
             // Posing: it steps up right beside you, shoulder to shoulder, standing on the ground.
             double yaw = Math.toRadians(owner.getYRot());
             double sx = -Math.cos(yaw), sz = -Math.sin(yaw); // your right
-            home = new Vec3(owner.getX() + sx * 0.75D * side(), owner.getY(), owner.getZ() + sz * 0.75D * side());
+            double fx = -Math.sin(yaw), fz = Math.cos(yaw);  // in front of you
+            home = new Vec3(owner.getX() + sx * 1.1D * side() + fx * 0.4D, owner.getY(), owner.getZ() + sz * 1.1D * side() + fz * 0.4D);
         }
         if (type == StandType.ENDER_WORLD && isPosing() && tickCount >= FADE_TICKS) {
             // Posing: it steps in right behind you, dead centre, standing on the ground like a person would.

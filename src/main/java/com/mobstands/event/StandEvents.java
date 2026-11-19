@@ -106,6 +106,12 @@ public final class StandEvents {
                 net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 0.5F);
     }
 
+    /** Before the world saves: any Steel Balls spinning under a horse go back to their owners. */
+    @SubscribeEvent
+    public static void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
+        com.mobstands.stand.HorseSpin.shutdown();
+    }
+
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         TickScheduler.clear();
@@ -155,7 +161,12 @@ public final class StandEvents {
             event.setCanceled(true);
             return;
         }
-        // Stopped time: hits on a frozen enemy pile up and land when time moves again.
+        // Stopped time: nothing frozen can hurt anyone (frozen mobs, frozen arrows)...
+        if (!event.getEntity().level().isClientSide && com.mobstands.stand.TimeStop.fromFrozen(event.getEntity(), event.getSource())) {
+            event.setCanceled(true);
+            return;
+        }
+        // ...and hits on a frozen enemy pile up and land when time moves again.
         if (!event.getEntity().level().isClientSide && com.mobstands.stand.TimeStop.absorb(event.getEntity(), event.getSource(), event.getAmount())) {
             event.setCanceled(true);
             return;
@@ -181,6 +192,7 @@ public final class StandEvents {
     /** Player actually took damage: feeds the Iron Golem Stand's rage (3 hits in a row). */
     @SubscribeEvent
     public static void onPlayerDamaged(LivingDamageEvent.Post event) {
+        if (!event.getEntity().level().isClientSide) StandManager.misfireHurt(event.getEntity(), event.getSource());
         if (event.getEntity() instanceof ServerPlayer p && event.getNewDamage() > 0.0F) {
             StandManager.onOwnerHurt(p);
         }
@@ -226,6 +238,7 @@ public final class StandEvents {
         if (event.getNewAboutToBeSetTarget() != null
                 && (StandManager.isDistracted(event.getEntity()) || StandManager.isSpinConfused(event.getEntity())
                 || com.mobstands.stand.AxolotlPowers.isBubbled(event.getEntity()))) event.setCanceled(true);
+        else if (StandManager.misfireBlocksTarget(event.getEntity(), event.getNewAboutToBeSetTarget())) event.setCanceled(true);
     }
 
     /** A spinning item picked up off the floor stops spinning (and stacks normally again). */

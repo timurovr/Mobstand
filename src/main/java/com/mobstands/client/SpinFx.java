@@ -48,17 +48,15 @@ public final class SpinFx {
         return 1080.0F * (1.0F - (1.0F - t) * (1.0F - t)); // three full turns
     }
 
-    /** 1 at full speed down to 0 when it stops (eases out). */
+    /** How strong the spin's effects (the shudder) are: 1 at the start, fading to 0 by the end. The spin itself never slows. */
     public static float speed(float el) {
         float k = 1.0F - Mth.clamp(el / StandManager.spinTicks(com.mobstands.network.ClientStandCache.get().spinLevel), 0.0F, 1.0F);
         return k * k;
     }
 
-    /** Total angle spun so far: the integral of a spin that slows down smoothly to zero. */
+    /** Total angle spun so far: once charged it keeps spinning at full speed the whole time (only the effects fade). */
     public static float angle(float el) {
-        float T = StandManager.spinTicks(com.mobstands.network.ClientStandCache.get().spinLevel);
-        float u = 1.0F - Mth.clamp(el / T, 0.0F, 1.0F);
-        return START_SPEED * T / 3.0F * (1.0F - u * u * u);
+        return (START_SPEED * el) % 360.0F;
     }
 
     /** Rotates a dropped Spin item on the floor: fast at first, winding down over its floor time. */
@@ -79,8 +77,13 @@ public final class SpinFx {
      * spinning faster than the item. {@code r} = ring radius in the current pose's units.
      */
     public static void drawRings(PoseStack ps, MultiBufferSource buffers, float el, float r) {
+        drawRings(ps, buffers, el, r, false);
+    }
+
+    /** {@code stay}: the streaks never fade (Steel Balls boosting a horse keep their wind on). */
+    public static void drawRings(PoseStack ps, MultiBufferSource buffers, float el, float r, boolean stay) {
         // Only as it starts spinning: the streaks burst out for 1.5 seconds, then fade away over 1 second.
-        float k = el < 30.0F ? 1.0F : 1.0F - (el - 30.0F) / 20.0F;
+        float k = stay ? 0.5F : el < 30.0F ? 1.0F : 1.0F - (el - 30.0F) / 20.0F;
         k = Math.min(k, el / 3.0F); // and snap in quickly at the start
         if (k < 0.03F) return;
         VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
@@ -153,7 +156,7 @@ public final class SpinFx {
         ring(vc, m, radius, y, from, span, width, alpha, 255, 255, 255);
     }
 
-    /** One broken arc in the XZ plane at height y: starts at angle {@code from}, spans {@code span} radians. */
+    /** One broken arc in the XZ plane at height y: a flat, tapered line that fades toward its tail. */
     private static void ring(VertexConsumer vc, Matrix4f m, float radius, float y, float from, float span, float width, float alpha,
                              int cr, int cg, int cb) {
         int al = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
@@ -164,15 +167,39 @@ public final class SpinFx {
             float w0 = width * Mth.sin(Mth.PI * u0), w1 = width * Mth.sin(Mth.PI * u1); // tapered ends
             float c0 = Mth.cos(a0), s0 = Mth.sin(a0), c1 = Mth.cos(a1), s1 = Mth.sin(a1);
             float ri0 = radius - w0, ro0 = radius + w0, ri1 = radius - w1, ro1 = radius + w1;
-            int fade = (int) (al * (0.35F + 0.65F * u1)); // brighter toward the leading end
-            vc.addVertex(m, c0 * ri0, y, s0 * ri0).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c0 * ro0, y, s0 * ro0).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c1 * ro1, y, s1 * ro1).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c1 * ri1, y, s1 * ri1).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c1 * ri1, y, s1 * ri1).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c1 * ro1, y, s1 * ro1).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c0 * ro0, y, s0 * ro0).setColor(cr, cg, cb, fade);
-            vc.addVertex(m, c0 * ri0, y, s0 * ri0).setColor(cr, cg, cb, fade);
+            int f0 = (int) (al * u0 * u0), f1 = (int) (al * u1 * u1); // faded: nothing at the tail, brightest at the front
+            vc.addVertex(m, c0 * ri0, y, s0 * ri0).setColor(cr, cg, cb, f0);
+            vc.addVertex(m, c0 * ro0, y, s0 * ro0).setColor(cr, cg, cb, f0);
+            vc.addVertex(m, c1 * ro1, y, s1 * ro1).setColor(cr, cg, cb, f1);
+            vc.addVertex(m, c1 * ri1, y, s1 * ri1).setColor(cr, cg, cb, f1);
+            vc.addVertex(m, c1 * ri1, y, s1 * ri1).setColor(cr, cg, cb, f1);
+            vc.addVertex(m, c1 * ro1, y, s1 * ro1).setColor(cr, cg, cb, f1);
+            vc.addVertex(m, c0 * ro0, y, s0 * ro0).setColor(cr, cg, cb, f0);
+            vc.addVertex(m, c0 * ri0, y, s0 * ri0).setColor(cr, cg, cb, f0);
         }
+    }
+
+    /** A little axis-aligned cube (half-size h), drawn with the additive glow. */
+    public static void cube(VertexConsumer vc, Matrix4f m, float x, float y, float z, float h, int r, int g, int b, int a) {
+        float x0 = x - h, x1 = x + h, y0 = y - h, y1 = y + h, z0 = z - h, z1 = z + h;
+        face(vc, m, x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, r, g, b, a);
+        face(vc, m, x0, y0, z1, x0, y1, z1, x1, y1, z1, x1, y0, z1, r, g, b, a);
+        face(vc, m, x0, y0, z0, x0, y1, z0, x0, y1, z1, x0, y0, z1, r, g, b, a);
+        face(vc, m, x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, r, g, b, a);
+        face(vc, m, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1, r, g, b, a);
+        face(vc, m, x0, y0, z0, x0, y0, z1, x1, y0, z1, x1, y0, z0, r, g, b, a);
+    }
+
+    private static void face(VertexConsumer vc, Matrix4f m, float ax, float ay, float az, float bx, float by, float bz,
+                             float cx, float cy, float cz, float dx, float dy, float dz, int r, int g, int b, int a) {
+        vc.addVertex(m, ax, ay, az).setColor(r, g, b, a);
+        vc.addVertex(m, bx, by, bz).setColor(r, g, b, a);
+        vc.addVertex(m, cx, cy, cz).setColor(r, g, b, a);
+        vc.addVertex(m, dx, dy, dz).setColor(r, g, b, a);
+        // and the back side too (the glow culls faces), so every cube face shows whichever way it's wound
+        vc.addVertex(m, dx, dy, dz).setColor(r, g, b, a);
+        vc.addVertex(m, cx, cy, cz).setColor(r, g, b, a);
+        vc.addVertex(m, bx, by, bz).setColor(r, g, b, a);
+        vc.addVertex(m, ax, ay, az).setColor(r, g, b, a);
     }
 }

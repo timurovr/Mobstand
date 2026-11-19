@@ -108,9 +108,31 @@ public final class SpinInput {
 
     private static boolean resultSlip;
 
+    /** On a horse: Shift pressed after Q while winding up - both Steel Balls, and you stay in the saddle. */
+    private static boolean horseDual;
+    /** Shift was already down when Q went down: no double spin from that press. */
+    private static boolean shiftFirst;
+
+    private static boolean riding(Minecraft mc) {
+        return mc.player != null && mc.player.getVehicle() instanceof net.minecraft.world.entity.animal.horse.AbstractHorse;
+    }
+
+    /** Keep you on your horse while Shift is part of a Q wind-up (Q first, then Shift). */
+    public static void onInput(net.neoforged.neoforge.client.event.MovementInputUpdateEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!riding(mc)) {
+            horseDual = false;
+            return;
+        }
+        if (horseDual && !Screen.hasShiftDown() && state == State.IDLE) horseDual = false;
+        if (horseDual || ((state == State.HOLDING || state == State.CUE) && !shiftFirst)) event.getInput().shiftKeyDown = false;
+    }
+
     /** Shift while winding up a Steel Ball with a second one anywhere in your inventory: spin both together. */
     private static boolean dualSteel(Minecraft mc) {
-        return !bothTarget && !offTarget && Screen.hasShiftDown() && holdsSteel(mc)
+        // On a horse Shift would get you off, so there it's Q first, then Shift (never Shift first).
+        boolean shift = riding(mc) ? horseDual : Screen.hasShiftDown();
+        return !bothTarget && !offTarget && shift && holdsSteel(mc)
                 && mc.player.getInventory().countItem(com.mobstands.registry.ModItems.STEEL_BALL.get()) >= 2;
     }
 
@@ -189,7 +211,10 @@ public final class SpinInput {
         if (pressed) {
             if (state == State.IDLE) {
                 // Choose the hand(s) at the start of a press.
-                offTarget = pickOffHand(mc);
+                horseDual = false;
+                shiftFirst = Screen.hasShiftDown();
+                offTarget = riding(mc) ? !mc.player.getOffhandItem().isEmpty() && mc.player.getMainHandItem().isEmpty()
+                        : pickOffHand(mc);
                 bothTarget = !offTarget && !Screen.hasShiftDown() && !mc.player.getMainHandItem().isEmpty()
                         && !mc.player.getOffhandItem().isEmpty() && !ClientStandCache.get().spinning && !ClientStandCache.get().offSpinning;
             }
@@ -246,6 +271,8 @@ public final class SpinInput {
     /** Every client tick: turns a long enough hold into the cue, and times the cue out. */
     /** Right-click throw: when the wind-up started (ms), or -1. Full power after THROW_FULL_MS. */
     private static long throwStart = -1L;
+    /** Right-click went to getting on a horse: no throw until you let go of it. */
+    private static boolean mountPress;
     private static final long THROW_FULL_MS = 450L;
 
     public static void tick() {
@@ -256,7 +283,15 @@ public final class SpinInput {
                 && !(mc.player.getMainHandItem().getItem() instanceof net.minecraft.world.item.ProjectileWeaponItem); // bows shoot instead
         boolean offSpin = mc.player != null && ClientStandCache.get().offSpinning && !mc.player.getOffhandItem().isEmpty();
         boolean spinning = mc.player != null && mc.screen == null && (mainSpin || offSpin); // both spinning: both get thrown
-        if (spinning && mc.options.keyUse.isDown()) {
+        if (riding(mc) && (state == State.HOLDING || state == State.CUE) && !shiftFirst && !bothTarget && !offTarget
+                && Screen.hasShiftDown() && !horseDual && holdsSteel(mc)
+                && mc.player.getInventory().countItem(com.mobstands.registry.ModItems.STEEL_BALL.get()) >= 2) {
+            horseDual = true; // Q, then Shift: both balls
+            mc.player.playSound(SoundEvents.NOTE_BLOCK_CHIME.value(), 0.5F, 1.4F);
+        }
+        if (!mc.options.keyUse.isDown()) mountPress = false;
+        else if (throwStart < 0 && HorseBalls.aimingAtHorse(mc)) mountPress = true;
+        if (spinning && mc.options.keyUse.isDown() && !mountPress) {
             if (throwStart < 0) throwStart = now;
         } else if (throwStart >= 0) {
             if (spinning) {

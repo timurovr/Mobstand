@@ -223,6 +223,291 @@ public final class SoundSteal {
                         .toList().forEach(p::removeEffect);
                 p.setRemainingFireTicks(0);
             }
+            case "minecraft:slime" -> {
+                // Boing: launched high into the air, landing soft.
+                c.sound(SoundEvents.SLIME_JUMP, 1.4F, 0.8F);
+                p.setDeltaMovement(p.getDeltaMovement().x, 1.5D, p.getDeltaMovement().z);
+                p.hurtMarked = true;
+                c.data.spinRocketAt = sl.getGameTime(); // no fall damage until you land
+                sl.sendParticles(ParticleTypes.ITEM_SLIME, p.getX(), p.getY() + 0.2D, p.getZ(), 30, 0.5D, 0.1D, 0.5D, 0.2D);
+            }
+            case "minecraft:magma_cube" -> {
+                c.sound(SoundEvents.MAGMA_CUBE_JUMP, 1.4F, 0.8F);
+                p.setDeltaMovement(p.getDeltaMovement().x, 1.3D, p.getDeltaMovement().z);
+                p.hurtMarked = true;
+                c.data.spinRocketAt = sl.getGameTime();
+                c.ring(ParticleTypes.FLAME, p.position().add(0.0D, 0.2D, 0.0D), 3.0D, 30);
+                for (LivingEntity e : c.enemies(p.position(), 4.0D)) e.igniteForSeconds(4.0F);
+            }
+            case "minecraft:shulker" -> {
+                LivingEntity t = c.aim(28.0D);
+                c.sound(SoundEvents.SHULKER_SHOOT, 1.2F, 1.0F);
+                if (t != null) {
+                    var bullet = new net.minecraft.world.entity.projectile.ShulkerBullet(sl, p, t, net.minecraft.core.Direction.Axis.Y);
+                    Vec3 o = p.getEyePosition().add(c.look().scale(1.2D));
+                    bullet.setPos(o.x, o.y, o.z);
+                    sl.addFreshEntity(bullet);
+                }
+            }
+            case "minecraft:evoker", "minecraft:illusioner" -> {
+                c.sound(SoundEvents.EVOKER_CAST_SPELL, 1.2F, 1.0F);
+                Vec3 dir = c.flatLook();
+                float yaw = (float) Math.atan2(dir.z, dir.x);
+                for (int k = 0; k < 14; k++) {
+                    Vec3 q = p.position().add(dir.scale(1.5D + k * 1.25D));
+                    var fang = new net.minecraft.world.entity.projectile.EvokerFangs(sl, q.x, Math.floor(q.y), q.z, yaw, k * 2, p);
+                    sl.addFreshEntity(fang);
+                }
+            }
+            case "minecraft:guardian", "minecraft:elder_guardian" -> {
+                LivingEntity t = c.aim(24.0D);
+                if (t != null) {
+                    boolean elder = id.equals("minecraft:elder_guardian");
+                    c.sound(SoundEvents.GUARDIAN_ATTACK, 1.2F, 1.0F);
+                    for (int k = 0; k < 6; k++) {
+                        final int n = k;
+                        c.later(k * 5, () -> {
+                            if (t.isAlive()) c.trail(ParticleTypes.BUBBLE, p.getEyePosition(), t.position().add(0.0D, t.getBbHeight() * 0.5D, 0.0D), 0.5D);
+                            if (n == 5 && t.isAlive()) {
+                                c.hurtSonic(t, c.dmg(elder ? 12.0D : 8.0D));
+                                if (elder) t.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, 600, 2));
+                            }
+                        });
+                    }
+                }
+            }
+            case "minecraft:witch" -> {
+                c.sound(SoundEvents.WITCH_THROW, 1.2F, 1.0F);
+                var options = java.util.List.of(net.minecraft.world.item.alchemy.Potions.STRONG_POISON, net.minecraft.world.item.alchemy.Potions.STRONG_HARMING,
+                        net.minecraft.world.item.alchemy.Potions.STRONG_SLOWNESS, net.minecraft.world.item.alchemy.Potions.LONG_WEAKNESS);
+                var potion = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.SPLASH_POTION);
+                potion.set(net.minecraft.core.component.DataComponents.POTION_CONTENTS,
+                        new net.minecraft.world.item.alchemy.PotionContents(options.get(p.getRandom().nextInt(options.size()))));
+                var thrown = new net.minecraft.world.entity.projectile.ThrownPotion(sl, p);
+                thrown.setItem(potion);
+                thrown.shootFromRotation(p, p.getXRot(), p.getYRot(), -15.0F, 0.9F, 1.0F);
+                sl.addFreshEntity(thrown);
+            }
+            case "minecraft:ravager", "minecraft:polar_bear" -> {
+                boolean rav = id.equals("minecraft:ravager");
+                c.sound(rav ? SoundEvents.RAVAGER_ROAR : SoundEvents.POLAR_BEAR_WARNING, 1.6F, 1.0F);
+                c.ring(ParticleTypes.POOF, p.position().add(0.0D, 0.5D, 0.0D), 4.0D, 40);
+                for (LivingEntity e : c.enemies(p.position(), rav ? 7.0D : 5.0D)) {
+                    c.hurt(e, c.dmg(rav ? 6.0D : 4.0D));
+                    c.push(e, e.position().subtract(p.position()), rav ? 1.6D : 1.0D, 0.5D);
+                }
+            }
+            case "minecraft:breeze" -> {
+                c.sound(SoundEvents.BREEZE_WIND_CHARGE_BURST.value(), 1.4F, 1.0F);
+                Vec3 f = c.flatLook().scale(0.6D);
+                p.setDeltaMovement(f.x, 1.6D, f.z);
+                p.hurtMarked = true;
+                c.data.spinRocketAt = sl.getGameTime();
+                sl.sendParticles(ParticleTypes.GUST_EMITTER_SMALL, p.getX(), p.getY(), p.getZ(), 1, 0.0D, 0.0D, 0.0D, 0.0D);
+                for (LivingEntity e : c.enemies(p.position(), 4.0D)) c.push(e, e.position().subtract(p.position()), 1.2D, 0.6D);
+            }
+            case "minecraft:phantom" -> {
+                c.sound(SoundEvents.PHANTOM_SWOOP, 1.2F, 1.0F);
+                Vec3 f = c.look().scale(1.4D);
+                p.setDeltaMovement(f.x, Math.max(0.4D, f.y), f.z);
+                p.hurtMarked = true;
+                p.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 80, 0));
+            }
+            case "minecraft:villager", "minecraft:wandering_trader" -> {
+                c.sound(SoundEvents.VILLAGER_YES, 1.2F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.HERO_OF_THE_VILLAGE, 2400, 0));
+                sl.sendParticles(ParticleTypes.HAPPY_VILLAGER, p.getX(), p.getY() + 1.0D, p.getZ(), 15, 0.4D, 0.6D, 0.4D, 0.0D);
+            }
+            case "minecraft:cat", "minecraft:ocelot" -> {
+                c.sound(SoundEvents.CAT_HISS, 1.5F, 1.0F);
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, p.getBoundingBox().inflate(16.0D),
+                        m -> m instanceof Creeper || m instanceof net.minecraft.world.entity.monster.Phantom)) {
+                    if (m instanceof Creeper cr) cr.setSwellDir(-1);
+                    m.setTarget(null);
+                    Vec3 away = m.position().add(m.position().subtract(p.position()).normalize().scale(12.0D));
+                    m.getNavigation().moveTo(away.x, away.y, away.z, 1.4D);
+                }
+            }
+            case "minecraft:allay" -> {
+                c.sound(SoundEvents.ALLAY_ITEM_TAKEN, 1.2F, 1.0F);
+                for (var item : sl.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, p.getBoundingBox().inflate(16.0D))) {
+                    item.teleportTo(p.getX(), p.getY() + 0.5D, p.getZ());
+                    sl.sendParticles(ParticleTypes.NOTE, item.getX(), item.getY() + 0.3D, item.getZ(), 1, 0.0D, 0.0D, 0.0D, 0.5D);
+                }
+            }
+            case "minecraft:spider", "minecraft:cave_spider" -> {
+                c.sound(SoundEvents.SPIDER_AMBIENT, 1.2F, 0.8F);
+                for (LivingEntity e : c.cone(10.0D, 0.7D)) {
+                    e.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 3));
+                    if (id.equals("minecraft:cave_spider")) e.addEffect(new MobEffectInstance(MobEffects.POISON, 120, 1));
+                    sl.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, net.minecraft.world.level.block.Blocks.COBWEB.defaultBlockState()),
+                            e.getX(), e.getY() + 0.5D, e.getZ(), 20, 0.3D, 0.4D, 0.3D, 0.0D);
+                }
+            }
+            case "minecraft:zombie", "minecraft:husk", "minecraft:zombie_villager" -> {
+                c.sound(SoundEvents.ZOMBIE_AMBIENT, 1.4F, 0.7F);
+                for (LivingEntity e : c.cone(8.0D, 0.6D)) {
+                    e.addEffect(new MobEffectInstance(MobEffects.HUNGER, 300, 2));
+                    e.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 120, 1));
+                    c.hurt(e, c.dmg(3.0D));
+                }
+            }
+            case "minecraft:drowned" -> {
+                c.sound(SoundEvents.DROWNED_SHOOT, 1.2F, 1.0F);
+                var trident = new net.minecraft.world.entity.projectile.ThrownTrident(sl, p, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.TRIDENT));
+                trident.shootFromRotation(p, p.getXRot(), p.getYRot(), 0.0F, 2.5F, 1.0F);
+                trident.pickup = net.minecraft.world.entity.projectile.AbstractArrow.Pickup.DISALLOWED;
+                sl.addFreshEntity(trident);
+            }
+            case "minecraft:iron_golem" -> {
+                LivingEntity t = c.aim(6.0D);
+                c.sound(SoundEvents.IRON_GOLEM_ATTACK, 1.5F, 0.8F);
+                if (t != null) {
+                    c.hurt(t, c.dmg(10.0D));
+                    t.setDeltaMovement(t.getDeltaMovement().x, 1.1D, t.getDeltaMovement().z);
+                    t.hurtMarked = true;
+                }
+            }
+            case "minecraft:snow_golem" -> {
+                c.sound(SoundEvents.SNOW_GOLEM_SHOOT, 1.2F, 1.0F);
+                for (int k = 0; k < 8; k++) {
+                    var ball = new net.minecraft.world.entity.projectile.Snowball(sl, p);
+                    ball.shootFromRotation(p, p.getXRot(), p.getYRot() + (k - 3.5F) * 4.0F, 0.0F, 1.8F, 2.0F);
+                    sl.addFreshEntity(ball);
+                }
+                for (LivingEntity e : c.cone(12.0D, 0.6D)) e.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 2));
+            }
+            case "minecraft:llama", "minecraft:trader_llama" -> {
+                LivingEntity t = c.aim(16.0D);
+                c.sound(SoundEvents.LLAMA_SPIT, 1.5F, 1.0F);
+                if (t != null) {
+                    c.trail(ParticleTypes.SPIT, p.getEyePosition(), t.position().add(0.0D, t.getBbHeight() * 0.7D, 0.0D), 0.4D);
+                    c.hurt(t, c.dmg(2.0D));
+                    t.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 160, 0));
+                    t.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 160, 0));
+                }
+            }
+            case "minecraft:dolphin" -> {
+                c.sound(SoundEvents.DOLPHIN_PLAY, 1.2F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.DOLPHINS_GRACE, 600, 0));
+                p.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 600, 0));
+            }
+            case "minecraft:turtle" -> {
+                c.sound(SoundEvents.TURTLE_AMBIENT_LAND, 1.2F, 0.8F);
+                p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 200, 2));
+                p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 200, 2));
+            }
+            case "minecraft:armadillo" -> {
+                c.sound(SoundEvents.ARMADILLO_ROLL, 1.2F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 120, 2));
+            }
+            case "minecraft:horse", "minecraft:donkey", "minecraft:mule", "minecraft:skeleton_horse", "minecraft:zombie_horse" -> {
+                c.sound(SoundEvents.HORSE_GALLOP, 1.4F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 300, 2));
+                p.addEffect(new MobEffectInstance(MobEffects.JUMP, 300, 1));
+            }
+            case "minecraft:camel" -> {
+                c.sound(SoundEvents.CAMEL_DASH, 1.4F, 1.0F);
+                Vec3 f = c.flatLook().scale(1.8D);
+                p.setDeltaMovement(f.x, 0.35D, f.z);
+                p.hurtMarked = true;
+            }
+            case "minecraft:chicken" -> {
+                c.sound(SoundEvents.CHICKEN_AMBIENT, 1.4F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 300, 0));
+                sl.sendParticles(new net.minecraft.core.particles.ItemParticleOption(ParticleTypes.ITEM, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.FEATHER)),
+                        p.getX(), p.getY() + 1.0D, p.getZ(), 15, 0.4D, 0.5D, 0.4D, 0.05D);
+            }
+            case "minecraft:frog" -> {
+                LivingEntity t = c.aim(14.0D);
+                c.sound(SoundEvents.FROG_TONGUE, 1.5F, 1.0F);
+                if (t != null) {
+                    Vec3 pull = p.position().subtract(t.position());
+                    t.setDeltaMovement(pull.scale(0.25D).add(0.0D, 0.3D, 0.0D));
+                    t.hurtMarked = true;
+                    c.hurt(t, c.dmg(2.0D));
+                }
+            }
+            case "minecraft:hoglin", "minecraft:zoglin" -> {
+                LivingEntity t = c.aim(6.0D);
+                c.sound(SoundEvents.HOGLIN_ATTACK, 1.4F, 1.0F);
+                if (t != null) {
+                    c.hurt(t, c.dmg(7.0D));
+                    t.setDeltaMovement(c.flatLook().x * 0.5D, 1.0D, c.flatLook().z * 0.5D);
+                    t.hurtMarked = true;
+                }
+            }
+            case "minecraft:piglin_brute", "minecraft:vindicator" -> {
+                LivingEntity t = c.aim(6.0D);
+                c.sound(SoundEvents.PLAYER_ATTACK_STRONG, 1.4F, 0.7F);
+                if (t != null) {
+                    c.hurt(t, c.dmg(13.0D));
+                    sl.sendParticles(ParticleTypes.SWEEP_ATTACK, t.getX(), t.getY() + t.getBbHeight() * 0.5D, t.getZ(), 2, 0.2D, 0.2D, 0.2D, 0.0D);
+                }
+            }
+            case "minecraft:vex" -> {
+                c.sound(SoundEvents.VEX_CHARGE, 1.2F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 140, 0));
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, p.getBoundingBox().inflate(20.0D), m -> m.getTarget() == p)) m.setTarget(null);
+            }
+            case "minecraft:wither_skeleton" -> {
+                c.sound(SoundEvents.WITHER_SKELETON_AMBIENT, 1.4F, 0.8F);
+                for (LivingEntity e : c.cone(8.0D, 0.6D)) {
+                    e.addEffect(new MobEffectInstance(MobEffects.WITHER, 160, 1));
+                    c.hurt(e, c.dmg(3.0D));
+                }
+            }
+            case "minecraft:wither" -> {
+                c.sound(SoundEvents.WITHER_SHOOT, 1.4F, 1.0F);
+                for (int k = 0; k < 3; k++) {
+                    final int n = k;
+                    c.later(k * 4, () -> {
+                        Vec3 dir = c.look();
+                        var skull = new net.minecraft.world.entity.projectile.WitherSkull(sl, p, dir);
+                        Vec3 o = p.getEyePosition().add(dir.scale(1.5D)).add(0.0D, (n - 1) * 0.4D, 0.0D);
+                        skull.setPos(o.x, o.y, o.z);
+                        sl.addFreshEntity(skull);
+                    });
+                }
+            }
+            case "minecraft:ender_dragon" -> {
+                c.sound(SoundEvents.ENDER_DRAGON_SHOOT, 1.6F, 1.0F);
+                var cloud = new net.minecraft.world.entity.AreaEffectCloud(sl, aim.x, aim.y, aim.z);
+                cloud.setOwner(p);
+                cloud.setParticle(ParticleTypes.DRAGON_BREATH);
+                cloud.setRadius(3.5F);
+                cloud.setDuration(200);
+                cloud.setRadiusPerTick((7.0F - cloud.getRadius()) / cloud.getDuration());
+                cloud.addEffect(new MobEffectInstance(MobEffects.HARM, 1, 1));
+                sl.addFreshEntity(cloud);
+            }
+            case "minecraft:squid" -> {
+                c.sound(SoundEvents.SQUID_SQUIRT, 1.4F, 1.0F);
+                for (LivingEntity e : c.cone(10.0D, 0.6D)) e.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 120, 0));
+                sl.sendParticles(ParticleTypes.SQUID_INK, p.getX(), p.getEyeY(), p.getZ(), 40, 0.6D, 0.4D, 0.6D, 0.1D);
+            }
+            case "minecraft:glow_squid", "minecraft:bat" -> {
+                // Echoes: everything around you lights up through walls.
+                c.sound(id.equals("minecraft:bat") ? SoundEvents.BAT_TAKEOFF : SoundEvents.GLOW_SQUID_SQUIRT, 1.4F, 1.0F);
+                for (LivingEntity e : sl.getEntitiesOfClass(LivingEntity.class, p.getBoundingBox().inflate(32.0D), e -> e != p)) {
+                    e.addEffect(new MobEffectInstance(MobEffects.GLOWING, 300, 0));
+                }
+                if (id.equals("minecraft:bat")) p.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 1200, 0));
+            }
+            case "minecraft:axolotl" -> {
+                c.sound(SoundEvents.AXOLOTL_SPLASH, 1.2F, 1.0F);
+                p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 120, 1));
+            }
+            case "minecraft:sniffer" -> {
+                c.sound(SoundEvents.SNIFFER_DIGGING, 1.4F, 1.0F);
+                var seed = new net.minecraft.world.item.ItemStack(p.getRandom().nextBoolean() ? net.minecraft.world.item.Items.TORCHFLOWER_SEEDS : net.minecraft.world.item.Items.PITCHER_POD);
+                if (!p.getInventory().add(seed)) p.drop(seed, false);
+            }
+            case "minecraft:endermite", "minecraft:silverfish" -> {
+                c.sound(SoundEvents.SILVERFISH_AMBIENT, 1.4F, 1.0F);
+                for (LivingEntity e : c.enemies(p.position(), 5.0D)) e.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 1));
+                p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 1));
+            }
             case THUNDER -> {
                 var bolt = EntityType.LIGHTNING_BOLT.create(sl);
                 if (bolt != null) {

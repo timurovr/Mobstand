@@ -12,6 +12,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.horse.AbstractHorse;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -42,21 +43,51 @@ public final class HorseSpin {
         float lastYaw, turnAcc;
         int lastTurnDir, tacks;
         long lastTurnAt;
+        /** The spinning balls put under the horse - they come back to you when the boost ends. */
+        net.minecraft.world.item.ItemStack mainBall = net.minecraft.world.item.ItemStack.EMPTY, offBall = net.minecraft.world.item.ItemStack.EMPTY;
     }
 
     private static final List<Run> RUNS = new ArrayList<>();
+    /** Horses launched by a sky-tossed ball, and until when they land softly. */
+    private static final java.util.Map<AbstractHorse, Long> LAUNCHED = new java.util.HashMap<>();
+
+    /** A sky-tossed Steel Ball dived under your horse: it's flung up into the air (higher for better spinners). */
+    public static void launch(ServerLevel sl, AbstractHorse horse, ServerPlayer p) {
+        float k = StandManager.spinSkill(StandManager.data(p).spinLevel);
+        Vec3 f = p.getLookAngle().multiply(1.0D, 0.0D, 1.0D);
+        f = f.lengthSqr() < 1.0E-4D ? Vec3.ZERO : f.normalize().scale(0.4D);
+        double up = 1.15D + 0.55D * k;
+        horse.setDeltaMovement(horse.getDeltaMovement().x + f.x, up, horse.getDeltaMovement().z + f.z);
+        horse.hurtMarked = true;
+        // The rider's game is the one moving the horse: launch it there too, so it works at a full gallop.
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
+                new com.mobstands.network.HorseLaunchPayload(horse.getId(), (float) f.x, (float) f.z, (float) up));
+        horse.resetFallDistance();
+        LAUNCHED.put(horse, sl.getGameTime() + 100L);
+        StandManager.addSpinXp(p, 6);
+        sl.playSound(null, horse.getX(), horse.getY(), horse.getZ(), com.mobstands.registry.ModSounds.SPIN_HAMON.get(), SoundSource.PLAYERS, 1.0F, 1.1F);
+        sl.playSound(null, horse.getX(), horse.getY(), horse.getZ(), SoundEvents.HORSE_JUMP, SoundSource.PLAYERS, 1.2F, 0.9F);
+        sl.sendParticles(ParticleTypes.CLOUD, horse.getX(), horse.getY() + 0.2D, horse.getZ(), 20, 0.6D, 0.1D, 0.6D, 0.06D);
+        StandManager.hamonBurst(sl, horse.position().add(0.0D, 0.3D, 0.0D), 18, 0.4D);
+        p.displayClientMessage(Component.literal("Up!").withStyle(s -> s.withColor(0xE8C25A).withBold(true)), true);
+    }
 
     /** Speed bonus (x base speed), jump bonus and how long it lasts, by Spin level 1..10. */
     private static double speedFor(int lvl) { return 0.15D + 0.035D * lvl; }
     private static double jumpFor(int lvl) { return 0.06D + 0.025D * lvl; }
     private static int ticksFor(int lvl) { return 200 + 20 * lvl; }
 
-    /** Right-click with a spinning Steel Ball while riding: the Spin goes into the horse's legs. */
+    /** Right-click with a spinning Steel Ball while riding and looking down: the Spin goes into the horse's legs. */
     public static boolean tryApply(ServerPlayer p, StandData d) {
         if (!(p.getVehicle() instanceof AbstractHorse horse)) return false;
         if (!p.getMainHandItem().is(com.mobstands.registry.ModItems.STEEL_BALL.get()) || !d.spinning) return false;
+        // Only when you look down at your horse - otherwise it's a normal throw (or, looking up, the missile).
+        if (p.getXRot() < 55.0F) return false;
         ServerLevel sl = p.serverLevel();
         long now = sl.getGameTime();
+        // Two spinning balls (one in each hand) make a stronger, longer boost.
+        boolean two = d.offSpinning && p.getOffhandItem().is(com.mobstands.registry.ModItems.STEEL_BALL.get());
+        double mult = two ? 1.5D : 1.0D;
         Run r = null;
         for (Run x : RUNS) if (x.horse == horse) r = x;
         if (r == null) {
@@ -66,19 +97,25 @@ public final class HorseSpin {
             RUNS.add(r);
         }
         r.rider = p;
-        r.until = now + ticksFor(d.spinLevel);
-        mod(horse.getAttribute(Attributes.MOVEMENT_SPEED), SPEED, speedFor(d.spinLevel), AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
-        mod(horse.getAttribute(Attributes.JUMP_STRENGTH), JUMP, jumpFor(d.spinLevel), AttributeModifier.Operation.ADD_VALUE);
+        int ticks = (int) (ticksFor(d.spinLevel) * (two ? 1.3D : 1.0D));
+        r.until = now + ticks;
+        mod(horse.getAttribute(Attributes.MOVEMENT_SPEED), SPEED, speedFor(d.spinLevel) * mult, AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
+        mod(horse.getAttribute(Attributes.JUMP_STRENGTH), JUMP, jumpFor(d.spinLevel) * (two ? 1.4D : 1.0D), AttributeModifier.Operation.ADD_VALUE);
 
-        // The ball spins down into its legs (it stays in your hand, like Gyro's).
+        // The balls go down under the horse and keep spinning there as its boost - you can't use them till it's over.
+        if (r.mainBall.isEmpty()) r.mainBall = p.getMainHandItem().split(1);
+        if (two && r.offBall.isEmpty()) r.offBall = p.getOffhandItem().split(1);
         d.spinning = false;
+        d.offSpinning = false;
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayersTrackingEntityAndSelf(horse,
+                new com.mobstands.network.HorseBallsPayload(horse.getId(), r.offBall.isEmpty() ? 1 : 2, ticks));
         StandManager.sync(p);
         StandManager.addSpinXp(p, 12);
         p.swing(net.minecraft.world.InteractionHand.MAIN_HAND, true);
         sl.playSound(null, horse.getX(), horse.getY(), horse.getZ(), SoundEvents.HORSE_GALLOP, SoundSource.PLAYERS, 1.0F, 1.2F);
         sl.playSound(null, horse.getX(), horse.getY(), horse.getZ(), SoundEvents.TRIDENT_RIPTIDE_1.value(), SoundSource.PLAYERS, 0.7F, 1.6F);
         sl.sendParticles(ParticleTypes.ENCHANTED_HIT, horse.getX(), horse.getY() + 0.5D, horse.getZ(), 24, 0.5D, 0.3D, 0.5D, 0.3D);
-        p.displayClientMessage(Component.literal("The Spin is in its legs!").withStyle(s -> s.withColor(0xE8C25A).withBold(true)), true);
+        p.displayClientMessage(Component.literal(two ? "Both balls are spinning under it!" : "The Spin is in its legs!").withStyle(s -> s.withColor(0xE8C25A).withBold(true)), true);
         return true;
     }
 
@@ -89,6 +126,15 @@ public final class HorseSpin {
     }
 
     public static void tick(ServerLevel sl) {
+        if (!LAUNCHED.isEmpty()) {
+            long t = sl.getGameTime();
+            LAUNCHED.entrySet().removeIf(e -> e.getKey().level() == sl && (e.getKey().isRemoved() || t > e.getValue()
+                    || (e.getKey().onGround() && t > e.getValue() - 90L)));
+            for (AbstractHorse h : LAUNCHED.keySet()) if (h.level() == sl) {
+                h.resetFallDistance(); // lands softly
+                for (var pass : h.getPassengers()) pass.resetFallDistance();
+            }
+        }
         if (RUNS.isEmpty()) return;
         if (!sl.tickRateManager().runsNormally()) return; // stopped time
         long now = sl.getGameTime();
@@ -143,14 +189,64 @@ public final class HorseSpin {
         mod(h.getAttribute(Attributes.MOVEMENT_SPEED), SPEED, 0.0D, AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
         mod(h.getAttribute(Attributes.MOVEMENT_SPEED), TACK, 0.0D, AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
         mod(h.getAttribute(Attributes.JUMP_STRENGTH), JUMP, 0.0D, AttributeModifier.Operation.ADD_VALUE);
+        giveBalls(r, h);
         if (!h.isRemoved()) {
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayersTrackingEntityAndSelf(h, new com.mobstands.network.HorseBallsPayload(h.getId(), 0, 0));
             sl.playSound(null, h.getX(), h.getY(), h.getZ(), SoundEvents.HORSE_BREATHE, SoundSource.PLAYERS, 1.0F, 0.9F);
             if (!r.rider.isRemoved() && r.rider.getVehicle() == h)
                 r.rider.displayClientMessage(Component.literal("The Spin wore off.").withStyle(s -> s.withColor(0x8A8A8A)), true);
         }
     }
 
+    /** The balls come back to your hands (or your inventory, or drop where the horse is if you're gone). */
+    private static void giveBalls(Run r, AbstractHorse h) {
+        for (int i = 0; i < 2; i++) {
+            net.minecraft.world.item.ItemStack ball = i == 0 ? r.mainBall : r.offBall;
+            if (ball.isEmpty()) continue;
+            ServerPlayer p = r.rider;
+            boolean given = false;
+            if (!p.isRemoved()) {
+                if (i == 0 && p.getMainHandItem().isEmpty()) {
+                    p.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ball);
+                    given = true;
+                } else if (i == 1 && p.getOffhandItem().isEmpty()) {
+                    p.setItemInHand(net.minecraft.world.InteractionHand.OFF_HAND, ball);
+                    given = true;
+                } else {
+                    given = p.getInventory().add(ball);
+                }
+                if (given) p.level().playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.6F, 1.4F);
+            }
+            if (!given) {
+                var drop = new net.minecraft.world.entity.item.ItemEntity(h.level(), h.getX(), h.getY() + 0.3D, h.getZ(), ball);
+                h.level().addFreshEntity(drop);
+            }
+        }
+        r.mainBall = net.minecraft.world.item.ItemStack.EMPTY;
+        r.offBall = net.minecraft.world.item.ItemStack.EMPTY;
+    }
+
+    /** Looking down at your horse and right-clicking: the boost ends early and your balls come back. */
+    public static void retrieve(ServerPlayer p) {
+        if (!(p.getVehicle() instanceof AbstractHorse horse)) return;
+        Iterator<Run> it = RUNS.iterator();
+        while (it.hasNext()) {
+            Run r = it.next();
+            if (r.horse != horse || (r.mainBall.isEmpty() && r.offBall.isEmpty())) continue;
+            it.remove();
+            end(p.serverLevel(), r);
+            return;
+        }
+    }
+
+    /** The server's stopping: hand every ball back before anything is saved. */
+    public static void shutdown() {
+        for (Run r : RUNS) giveBalls(r, r.horse);
+        RUNS.clear();
+    }
+
     public static void clear() {
         RUNS.clear();
+        LAUNCHED.clear();
     }
 }

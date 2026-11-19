@@ -89,6 +89,36 @@ public final class PlayerPoses {
             return;
         }
 
+        // ---- Spin: a hand holding a spinning Steel Ball is held out at your side for as long as it spins - walking,
+        // running, whatever - and both hands if both are spinning. For the first 2 seconds you also show it off like
+        // Gyro: the free hand comes up in front and your head tips down to watch the ball.
+        if (p == net.minecraft.client.Minecraft.getInstance().player && !busy) {
+            float part = Mth.frac(age);
+            float main = SpinFx.elapsed(part, false), off = SpinFx.elapsed(part, true);
+            boolean mainOn = main >= 0.0F, offOn = off >= 0.0F;
+            if (mainOn || offOn) {
+                float br = Mth.sin(age * 0.2F) * 0.03F;
+                if (mainOn) arm(m.rightArm, 0.25F, 0.0F, 0.55F + br, Mth.clamp(main / 5.0F, 0.0F, 1.0F));
+                if (offOn) arm(m.leftArm, 0.25F, 0.0F, -0.55F - br, Mth.clamp(off / 5.0F, 0.0F, 1.0F));
+                if (mainOn != offOn) {
+                    float t = mainOn ? main : off;
+                    if (t < 40.0F) {
+                        float sw = Mth.clamp(t / 5.0F, 0.0F, 1.0F) * Mth.clamp((40.0F - t) / 8.0F, 0.0F, 1.0F);
+                        sw = sw * sw * (3.0F - 2.0F * sw);
+                        ModelPart show = mainOn ? m.leftArm : m.rightArm;
+                        float side = mainOn ? -1.0F : 1.0F;
+                        arm(show, -1.45F + br, -0.18F * side, 0.0F, sw);
+                        head(m, 0.3F, 0.0F, sw);
+                        if (amount < 0.1F) {
+                            leg(m.rightLeg, -0.06F, 0.08F, sw);
+                            leg(m.leftLeg, 0.08F, -0.08F, sw);
+                        }
+                    }
+                }
+                m.hat.copyFrom(m.head);
+            }
+        }
+
         // ---- Stand stance, blended in smoothly when standing still with the Stand out
         StandType type = StandPresence.posing(p.getUUID(), p.level().getGameTime())
                 ? StandPresence.get(p.getUUID(), p.level().getGameTime()) : null; // only after pressing the pose key (J)
@@ -117,6 +147,12 @@ public final class PlayerPoses {
                 leg(m.leftLeg, 0.0F, -0.1F, w);
             }
             case ENDER_WORLD -> { } // no player pose: you just stand normally
+            case GER -> {
+                // Your arm reaches out at 45 degrees toward your Stand standing beside you.
+                int s = standSide(p);
+                if (s > 0) arm(m.rightArm, -0.25F, 0.0F, 0.785F + br, w); // it's on your right
+                else arm(m.leftArm, -0.25F, 0.0F, -0.785F - br, w);       // it's on your left
+            }
             case ENDERMAN -> { // pointing straight at you
                 arm(m.rightArm, -1.6F, -0.15F, br, w);
                 arm(m.leftArm, 0.1F, 0.0F, -0.1F - br, w);
@@ -166,10 +202,12 @@ public final class PlayerPoses {
                 leg(m.rightLeg, -0.12F, 0.08F, w);
                 leg(m.leftLeg, 0.22F, -0.06F, w);
             }
-            case HORSE -> { // proud: chest out, fists on hips, chin up
-                arm(m.rightArm, -0.3F, 0.0F, 0.7F + br, w);
-                arm(m.leftArm, -0.3F, 0.0F, -0.7F - br, w);
-                head(m, -0.2F, 0.0F, w);
+            case HORSE -> { // ready for the race: right hand shading your eyes, scanning the course; left hand out at your side
+                arm(m.rightArm, -2.45F + br, -0.6F, 0.05F, w);
+                arm(m.leftArm, 0.25F, 0.0F, -0.55F, w);
+                head(m, -0.12F, 0.0F, w);
+                leg(m.rightLeg, -0.06F, 0.08F, w);
+                leg(m.leftLeg, 0.08F, -0.08F, w);
             }
             case AXOLOTL -> { // relaxed, hands loosely clasped in front, head tilted
                 arm(m.rightArm, -0.55F, -0.45F, 0.0F, w);
@@ -189,6 +227,15 @@ public final class PlayerPoses {
             }
         }
         m.hat.copyFrom(m.head);
+    }
+
+    /** Which side of you your Stand is standing on: 1 = your right, -1 = your left. */
+    private static int standSide(Player p) {
+        for (com.mobstands.entity.StandEntity s : p.level().getEntitiesOfClass(com.mobstands.entity.StandEntity.class, p.getBoundingBox().inflate(4.0D),
+                x -> x.getOwnerPlayer() == p)) {
+            return s.side();
+        }
+        return 1;
     }
 
     private static void arm(ModelPart p, float x, float y, float z, float w) {

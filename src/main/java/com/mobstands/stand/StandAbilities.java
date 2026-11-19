@@ -919,7 +919,7 @@ public final class StandAbilities {
                         SoundSteal.steal(c)),
                 ab("Switch Sound", "Cycle which of your stolen sounds is ready.", 1, 0.3, c ->
                         SoundSteal.cycle(c)),
-                ab("Release Sound", "Unleash the ready sound and the power that came with it: a creeper's explosion, a ghast's fireball, a warden's sonic boom, a blaze's fire, an enderman's teleport, a skeleton's volley, a goat's ram, a wolf's growl, a bee's sting, a cow's moo (clears your bad effects), thunder... Any other sound becomes a decoy that pulls mobs to it.", 1, 1.5, c ->
+                ab("Release Sound", "Unleash the ready sound and the power that came with it: a creeper's explosion, a ghast's fireball, a warden's sonic boom, a blaze's fire, an enderman's teleport, a skeleton's volley, a goat's ram, a wolf's growl, a bee's sting, a cow's moo (clears your bad effects), a slime's bounce, a shulker's bullet, an evoker's fangs, a guardian's beam, a witch's potion, a ravager's roar, a breeze's gust, a wither's skulls, dragon's breath, thunder... and many more. Any other sound becomes a decoy that pulls mobs to it.", 1, 1.5, c ->
                         SoundSteal.release(c)),
                 ab("Go Beyond", "A perfectly spinning sliver of gold so thin it isn't there: it goes straight through armour and shields into whatever you're looking at.", 1, 14, c ->
                         SoundSteal.goBeyond(c))
@@ -938,7 +938,7 @@ public final class StandAbilities {
                         Ger.returnToZero(c)),
                 ab("Life Giver", "Two Iron Golems come to life beside you to defend the village for 40 seconds, and every villager and golem nearby is healed.", 1, 60, c ->
                         Ger.lifeGiver(c)),
-                ab("Golden Barrier", "A golden dome over everything around you for 20 seconds: nothing inside can be hurt by raiders or monsters, and they're pushed back out of it.", 1, 90, c ->
+                ab("Golden Barrier", "Like Love Train: a curtain of golden light falls from the sky over everything around you for 20 seconds. Nothing inside can be hurt by raiders or monsters, and they're pushed back out of the light.", 1, 90, c ->
                         Ger.goldenBarrier(c))
         };
     }

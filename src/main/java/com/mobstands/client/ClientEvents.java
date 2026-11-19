@@ -33,6 +33,39 @@ public final class ClientEvents {
         return !(hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof AbstractVillager);
     }
 
+    /** A thrown ball (beyond arm's reach) under the crosshair, within 64 blocks and not behind a wall. */
+    private static boolean aimingAtFarBall(Minecraft mc) {
+        if (mc.player == null || mc.level == null) return false;
+        net.minecraft.world.phys.Vec3 eye = mc.player.getEyePosition();
+        net.minecraft.world.phys.Vec3 look = mc.player.getLookAngle();
+        net.minecraft.world.phys.Vec3 end = eye.add(look.scale(64.0D));
+        net.minecraft.world.phys.HitResult wall = mc.level.clip(new net.minecraft.world.level.ClipContext(eye, end,
+                net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, mc.player));
+        double maxD = wall.getType() == HitResult.Type.MISS ? 64.0D : wall.getLocation().distanceTo(eye) + 1.0D;
+        for (com.mobstands.entity.SpinItemEntity si : mc.level.getEntitiesOfClass(com.mobstands.entity.SpinItemEntity.class,
+                mc.player.getBoundingBox().inflate(64.0D), e -> true)) {
+            net.minecraft.world.phys.AABB box = si.getBoundingBox().inflate(0.5D);
+            var hit = box.clip(eye, end);
+            if (hit.isEmpty()) continue;
+            double d = hit.get().distanceTo(eye);
+            if (d > 4.5D && d <= maxD) return true;
+        }
+        // A Steel Ball dropped on the ground.
+        for (net.minecraft.world.entity.item.ItemEntity ie : mc.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                mc.player.getBoundingBox().inflate(64.0D), e -> e.getItem().is(com.mobstands.registry.ModItems.STEEL_BALL.get()))) {
+            var hit = ie.getBoundingBox().inflate(0.5D).clip(eye, end);
+            if (hit.isEmpty()) continue;
+            double d = hit.get().distanceTo(eye);
+            if (d > 4.5D && d <= maxD) return true;
+        }
+        return false;
+    }
+
+    @SubscribeEvent
+    public static void onMoveInput(net.neoforged.neoforge.client.event.MovementInputUpdateEvent event) {
+        SpinInput.onInput(event);
+    }
+
     @SubscribeEvent
     public static void onUseKey(InputEvent.InteractionKeyMappingTriggered event) {
         if (event.isAttack()) {
@@ -46,6 +79,22 @@ public final class ClientEvents {
         if (!event.isUseItem()) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen != null) return;
+        // Right-click one of your thrown balls from far away: it comes back.
+        if (aimingAtFarBall(mc)) {
+            com.mobstands.network.StandActionPayload p32 = new com.mobstands.network.StandActionPayload(32);
+            net.neoforged.neoforge.network.PacketDistributor.sendToServer(p32);
+            event.setCanceled(true);
+            event.setSwingHand(true);
+            return;
+        }
+        // Riding with your balls spinning under the horse: look down and right-click with an empty hand to take them back.
+        if (HorseBalls.tryRetrieve()) {
+            event.setCanceled(true);
+            event.setSwingHand(true);
+            return;
+        }
+        // Spinning and aiming at a horse: right-click gets on it instead of throwing.
+        if (HorseBalls.aimingAtHorse(mc)) return;
         if (StandKeys.BASIC.getKey().equals(mc.options.keyUse.getKey()) && basicAllowed(mc)) {
             event.setCanceled(true);
             event.setSwingHand(false);
@@ -175,7 +224,7 @@ public final class ClientEvents {
             // Just struck the ground: the sword rolls forward over and over, like a wheel.
             ps.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-SpinFx.slashAngle(event.getPartialTick())));
         } else {
-            ps.mulPose(com.mojang.math.Axis.YP.rotationDegrees(SpinFx.angle(el)));             // the spin, slowing to a stop
+            ps.mulPose(com.mojang.math.Axis.YP.rotationDegrees(SpinFx.angle(el)));             // the spin, full speed the whole time
         }
         // A small cube (or flat item) like it's held between the fingers.
         ps.pushPose();
@@ -196,6 +245,10 @@ public final class ClientEvents {
         boolean off = arm != mc.player.getMainArm();
         if (!(off ? ClientStandCache.get().offSpinning : ClientStandCache.get().spinning)) return;
         float el = Math.max(0.0F, SpinFx.elapsed(mc.getTimer().getGameTimeDeltaPartialTick(true), off));
+        // Under the palm instead of in front of the fist: back from the knuckles, a little further down the arm,
+        // turned so it spins round the line of your arm.
+        ps.translate(0.0F, -0.09F, -0.01F);
+        ps.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-90.0F));
         ps.mulPose(com.mojang.math.Axis.YP.rotationDegrees(SpinFx.angle(el)));
         SpinFx.drawRings(ps, buffers, el, 0.28F);
     }

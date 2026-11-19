@@ -239,7 +239,13 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         // The mob's own glowing eyes (Enderman, Spider, Phantom) stay as in vanilla.
         if (vis.eyes != null) {
             VertexConsumer eyes = buffers.getBuffer(RenderType.eyes(vis.eyes));
-            vis.main.renderToBuffer(ps, eyes, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, ((int) (255.0F * eased) << 24) | 0xFFFFFF);
+            int glowCol = ((int) (255.0F * eased) << 24) | 0xFFFFFF;
+            if (type == StandType.GER) {
+                // GER's emeralds and eyes pulse slowly, like a heartbeat of light.
+                int lv = (int) (255.0F * (0.3F + 0.45F * (0.5F + 0.5F * Mth.sin(age * 0.11F))));
+                glowCol = ((int) (255.0F * eased) << 24) | (lv << 16) | (lv << 8) | lv;
+            }
+            vis.main.renderToBuffer(ps, eyes, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, glowCol);
         }
         // ORA barrage (the Barrage ability): big fists keep flying out of the Stand for the whole move.
         if (slot == 1 && progress >= 0.0F && vis.rightArm != null && type.barrage()) {
@@ -298,17 +304,29 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             for (int k = 0; k < 2; k++) {
                 if (hits[k] < 0 || (leftOnly && k == 1)) continue; // single click: right fist only
                 if (type == StandType.ZOMBIFIED_PIGLIN && k == 0 && !leftOnly) continue; // pokes with its real sword instead of a ghost fist
-                float e = StandVisual.comboPunch(tp, hits[k]);
-                if (e <= 0.02F) continue;
-                ps.pushPose();
-                ps.translate(k == 0 && !leftOnly ? -0.35F : 0.35F, 0.35F, -(0.3F + e * 2.2F));
-                float sc = 1.0F + e * 0.6F;
-                ps.scale(sc, sc, sc);
-                // Fetch the buffer right before drawing: drawing a glow in between switches buffers and closes the old one.
-                StandVisual.ArmPiece armPiece = vis.arm(k == 1 || leftOnly);
-                drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), armPiece, packedLight, 0xFFFFFFFF, 1.0F);
-                armGlow(ps, buffers, armPiece, 0.4F * e, 1.15F, aura);
-                ps.popPose();
+                // A quick MUDA burst: a handful of spinning, double-glowing fists fired around the moment of impact,
+                // just like the barrage - only short.
+                float baseX = k == 0 && !leftOnly ? -0.35F : 0.35F;
+                for (int j = 0; j < 4; j++) {
+                    float start = hits[k] - 3.0F + j * 1.4F;
+                    float t = (tp - start) / 5.0F;
+                    if (t <= 0.0F || t >= 1.0F) continue;
+                    float e = Mth.sin(t * Mth.PI);
+                    if (e <= 0.02F) continue;
+                    float sx = baseX + Mth.sin(j * 2.399F + k * 1.1F) * 0.28F;
+                    float sy = 0.3F + Mth.cos(j * 1.7F + k * 0.8F) * 0.22F;
+                    ps.pushPose();
+                    ps.translate(sx, sy, -(0.25F + e * 2.3F));
+                    ps.mulPose(Axis.ZP.rotationDegrees(j * 47.0F + k * 30.0F));
+                    float sc = 0.8F + e * 0.55F;
+                    ps.scale(sc, sc, sc);
+                    // Fetch the buffer right before drawing: drawing a glow in between switches buffers and closes the old one.
+                    StandVisual.ArmPiece armPiece = vis.arm(((j + k) % 2 == 1) != leftOnly);
+                    drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), armPiece, packedLight, 0xFFFFFFFF, 1.0F);
+                    armGlow(ps, buffers, armPiece, 0.34F * e, 1.16F, aura);
+                    armGlow(ps, buffers, armPiece, 0.16F * e, 1.45F - 0.2F * e, aura);
+                    ps.popPose();
+                }
             }
             for (int k = 0; k < 2; k++) {
                 if (hits[k] < 0 || (leftOnly && k == 1)) continue;
@@ -346,6 +364,18 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             }
             ps.popPose();
         }
+        // GER: a real Totem of Undying set into its chest.
+        if (type == StandType.GER && eased > 0.4F) {
+            ps.pushPose();
+            vis.root.getChild("body").translateAndRotate(ps);
+            ps.translate(0.0F, 3.5F / 16.0F, -6.9F / 16.0F);
+            ps.mulPose(Axis.XP.rotationDegrees(180.0F));
+            ps.scale(0.55F, 0.55F, 0.55F);
+            Minecraft.getInstance().getItemRenderer().renderStatic(TOTEM, ItemDisplayContext.FIXED, LightTexture.FULL_BRIGHT,
+                    OverlayTexture.NO_OVERLAY, ps, buffers, stand.level(), stand.getId());
+            totemStar(ps, buffers, age, eased);
+            ps.popPose();
+        }
         // Held item (the Skeleton's bow), placed exactly like vanilla's held-item layer.
         if (vis.main instanceof ArmedModel armed && dummy instanceof LivingEntity holder && eased > 0.6F) {
             ItemStack held = holder.getMainHandItem();
@@ -365,6 +395,71 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
     }
 
     private static final ItemStack CLOCK = new ItemStack(net.minecraft.world.item.Items.CLOCK);
+    private static final ItemStack TOTEM = new ItemStack(net.minecraft.world.item.Items.TOTEM_OF_UNDYING);
+
+    private static final ResourceLocation GOLD_TEX = ResourceLocation.withDefaultNamespace("textures/block/gold_block.png");
+    private static final ResourceLocation EMERALD_TEX = ResourceLocation.withDefaultNamespace("textures/block/emerald_block.png");
+
+    /**
+     * GER's halo, vanilla style: a ring of little gold-block cubes, wound round the middle with thin emerald wire.
+     * Drawn in model space (y points down), centred on the current pose; the caller spins it.
+     */
+    private static void halo(PoseStack ps, MultiBufferSource buffers, float alpha) {
+        int segs = 20;
+        float r = 5.5F / 16.0F, size = 1.5F / 16.0F;
+        VertexConsumer gold = buffers.getBuffer(RenderType.entityCutoutNoCull(GOLD_TEX));
+        for (int i = 0; i < segs; i++) {
+            ps.pushPose();
+            ps.mulPose(Axis.YP.rotation(i * Mth.TWO_PI / segs));
+            ps.translate(r, 0.0F, 0.0F);
+            cube(ps, gold, size * 0.8F, size, size * 1.25F, (i * 3) % 14);
+            ps.popPose();
+        }
+        VertexConsumer emerald = buffers.getBuffer(RenderType.entityCutoutNoCull(EMERALD_TEX));
+        for (int i = 0; i < segs; i += 4) {
+            // a thin wrap of wire round the middle of the ring
+            ps.pushPose();
+            ps.mulPose(Axis.YP.rotation((i + 0.5F) * Mth.TWO_PI / segs));
+            ps.translate(r, 0.0F, 0.0F);
+            cube(ps, emerald, size * 1.15F, size * 1.4F, 0.45F / 16.0F, (i * 5) % 14);
+            ps.popPose();
+        }
+    }
+
+    /** A small textured cube (w along x, h along y, d along z) centred on the pose, full-bright, pixel-scale UVs. */
+    private static void cube(PoseStack ps, VertexConsumer vc, float w, float h, float d, int uvOff) {
+        PoseStack.Pose pose = ps.last();
+        float x0 = -w / 2, x1 = w / 2, y0 = -h / 2, y1 = h / 2, z0 = -d / 2, z1 = d / 2;
+        float u0 = uvOff / 16.0F, u1 = (uvOff + 2) / 16.0F, v0 = 0.25F, v1 = 0.375F;
+        face(vc, pose, x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, -1, u0, v0, u1, v1);
+        face(vc, pose, x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, 1, u0, v0, u1, v1);
+        face(vc, pose, x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, -1, 0, 0, u0, v0, u1, v1);
+        face(vc, pose, x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, 1, 0, 0, u0, v0, u1, v1);
+        face(vc, pose, x0, y0, z1, x1, y0, z1, x1, y0, z0, x0, y0, z0, 0, -1, 0, u0, v0, u1, v1);
+        face(vc, pose, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1, 0, 1, 0, u0, v0, u1, v1);
+    }
+
+    private static void face(VertexConsumer vc, PoseStack.Pose pose, float ax, float ay, float az, float bx, float by, float bz,
+                             float cx, float cy, float cz, float dx, float dy, float dz, float nx, float ny, float nz,
+                             float u0, float v0, float u1, float v1) {
+        vc.addVertex(pose, ax, ay, az).setColor(-1).setUv(u0, v0).setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightTexture.FULL_BRIGHT).setNormal(pose, nx, ny, nz);
+        vc.addVertex(pose, bx, by, bz).setColor(-1).setUv(u1, v0).setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightTexture.FULL_BRIGHT).setNormal(pose, nx, ny, nz);
+        vc.addVertex(pose, cx, cy, cz).setColor(-1).setUv(u1, v1).setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightTexture.FULL_BRIGHT).setNormal(pose, nx, ny, nz);
+        vc.addVertex(pose, dx, dy, dz).setColor(-1).setUv(u0, v1).setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightTexture.FULL_BRIGHT).setNormal(pose, nx, ny, nz);
+    }
+
+    /** A two-sided coloured quad. */
+    private static void quad(VertexConsumer vc, org.joml.Matrix4f m, float x0, float y0, float z0, float x1, float y1, float z1,
+                             float x2, float y2, float z2, float x3, float y3, float z3, int r, int g, int b, int a) {
+        vc.addVertex(m, x0, y0, z0).setColor(r, g, b, a);
+        vc.addVertex(m, x1, y1, z1).setColor(r, g, b, a);
+        vc.addVertex(m, x2, y2, z2).setColor(r, g, b, a);
+        vc.addVertex(m, x3, y3, z3).setColor(r, g, b, a);
+        vc.addVertex(m, x3, y3, z3).setColor(r, g, b, a);
+        vc.addVertex(m, x2, y2, z2).setColor(r, g, b, a);
+        vc.addVertex(m, x1, y1, z1).setColor(r, g, b, a);
+        vc.addVertex(m, x0, y0, z0).setColor(r, g, b, a);
+    }
 
     /** Which Stand visual a model belongs to (so whole-body glows can hide see-through parts). */
     private static final java.util.Map<Object, StandVisual> MODEL_OWNERS = new java.util.IdentityHashMap<>();
@@ -399,7 +494,9 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         // gets a slim aura and a thick Golem arm a wide one.
         float lengthGrow = 1.0F + (grow - 1.0F) * 0.3F;
         float armScale = ARM_LENGTH / arm.length();
-        ps.scale(armScale * grow, armScale * grow, armScale * lengthGrow);
+        // Short arms (GER, Piglins) are stretched to fist length but keep their real slim thickness.
+        float thick = Math.min(armScale, 1.0F);
+        ps.scale(thick * grow, thick * grow, armScale * lengthGrow);
         ps.mulPose(Axis.XP.rotation(-Mth.HALF_PI)); // arm hangs along +y (down); turn it to point forward, hand first
         ps.translate(-arm.cx() / 16.0F, -arm.cy() / 16.0F, -arm.cz() / 16.0F);
         float px = part.x, py = part.y, pz = part.z, rx = part.xRot, ry = part.yRot, rz = part.zRot;
@@ -434,7 +531,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             g = c >> 8 & 255;
             b = c & 255;
         }
-        float k = stopped ? 1.6F : 1.0F;
+        float k = (stopped ? 1.6F : 1.0F) * daylightDim();
         // Soft radial glow: bright at the middle, fading to nothing at the edge.
         disc(vc, m, 0.0F, 0.95F + 0.08F * pulse, 255, 245, 210, r, g, b, 0.35F * k * (0.7F + 0.3F * pulse), 0.0F);
         disc(vc, m, 0.45F, 1.6F + 0.15F * pulse, r, g, b, r, g, b, 0.16F * k, 0.0F);
@@ -442,6 +539,45 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         float spin = stopped ? 0.0F : age * 1.2F;
         ring(vc, m, 0.66F, 0.71F, spin, r, g, b, 0.55F * k, 12, 0.13F);
         ring(vc, m, 0.52F, 0.545F, -spin * 1.7F, r, g, b, 0.35F * k, 4, 0.08F);
+    }
+
+    /**
+     * Additive glows wash out into a white blob against a bright daytime sky: full strength at night, faint by day.
+     */
+    private static float daylightDim() {
+        var level = Minecraft.getInstance().level;
+        if (level == null) return 1.0F;
+        float sky = level.getSkyDarken(1.0F); // ~0.2 at night, 1.0 in full daylight
+        float day = Mth.clamp((sky - 0.2F) / 0.8F, 0.0F, 1.0F);
+        return 1.0F - 0.75F * day;
+    }
+
+    /** GER's totem: a soft gold glow behind it and a slowly turning eight-pointed star of light, gently pulsing. */
+    private static void totemStar(PoseStack ps, MultiBufferSource buffers, float age, float fade) {
+        org.joml.Matrix4f m = ps.last().pose();
+        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        float pulse = 0.5F + 0.5F * Mth.sin(age * 0.11F);
+        fade *= daylightDim();
+        int r = 255, g = 214, b = 74;
+        disc(vc, m, 0.0F, 0.75F + 0.06F * pulse, 255, 245, 210, r, g, b, 0.3F * fade * (0.7F + 0.3F * pulse), 0.0F);
+        float spin = age * 0.6F * Mth.DEG_TO_RAD;
+        int al = (int) (Mth.clamp(0.5F * fade * (0.7F + 0.3F * pulse), 0.0F, 1.0F) * 255.0F);
+        for (int i = 0; i < 8; i++) {
+            float t = spin + i * Mth.TWO_PI / 8;
+            float len = (i % 2 == 0 ? 1.15F : 0.72F) + 0.06F * pulse; // long points at the cross, short between
+            float w = i % 2 == 0 ? 0.07F : 0.05F;
+            float c = Mth.cos(t), s = Mth.sin(t), px = -s * w, py = c * w;
+            float in = 0.28F;
+            // a tapering point: wide at the middle, sharp at the tip
+            vc.addVertex(m, c * in - px, s * in - py, 0.0F).setColor(255, 240, 180, al);
+            vc.addVertex(m, c * len, s * len, 0.0F).setColor(r, g, b, 0);
+            vc.addVertex(m, c * len, s * len, 0.0F).setColor(r, g, b, 0);
+            vc.addVertex(m, c * in + px, s * in + py, 0.0F).setColor(255, 240, 180, al);
+            vc.addVertex(m, c * in + px, s * in + py, 0.0F).setColor(255, 240, 180, al);
+            vc.addVertex(m, c * len, s * len, 0.0F).setColor(r, g, b, 0);
+            vc.addVertex(m, c * len, s * len, 0.0F).setColor(r, g, b, 0);
+            vc.addVertex(m, c * in - px, s * in - py, 0.0F).setColor(255, 240, 180, al);
+        }
     }
 
     /** A filled circle (as a fan of quads) whose colour/alpha blend from the inner radius to the outer one. */

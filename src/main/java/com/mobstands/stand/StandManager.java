@@ -996,6 +996,55 @@ public final class StandManager {
         if (now % 2L == 0L) hamonBurst((ServerLevel) p.level(), p.position(), 1, 0.2D);
     }
 
+    /** The player right-clicked one of their thrown balls from a distance: the one under the crosshair comes back. */
+    public static void recallBall(ServerPlayer p) {
+        Vec3 eye = p.getEyePosition();
+        Vec3 look = p.getLookAngle();
+        com.mobstands.entity.SpinItemEntity best = null;
+        double bestAng = 0.06D; // about 3.5 degrees off the crosshair, at most
+        for (com.mobstands.entity.SpinItemEntity si : p.serverLevel().getEntitiesOfClass(com.mobstands.entity.SpinItemEntity.class,
+                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.ownedBy(p))) {
+            Vec3 to = si.position().add(0.0D, si.getBbHeight() * 0.5D, 0.0D).subtract(eye);
+            double d = to.length();
+            if (d < 1.0E-3D || d > RECALL_RANGE) continue;
+            double ang = Math.acos(Math.max(-1.0D, Math.min(1.0D, to.scale(1.0D / d).dot(look))));
+            // Closer balls are bigger on screen: allow a bit more slack up close.
+            if (ang < Math.max(bestAng, 0.45D / d) && (best == null || ang < bestAng)) {
+                best = si;
+                bestAng = ang;
+            }
+        }
+        // A Steel Ball you dropped on the ground (a plain item) counts too.
+        net.minecraft.world.entity.item.ItemEntity bestItem = null;
+        double itemAng = Double.MAX_VALUE;
+        for (net.minecraft.world.entity.item.ItemEntity ie : p.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.getItem().is(com.mobstands.registry.ModItems.STEEL_BALL.get())
+                        && (x.getOwner() == null || x.getOwner() == p))) {
+            Vec3 to = ie.position().add(0.0D, 0.15D, 0.0D).subtract(eye);
+            double d = to.length();
+            if (d < 1.0E-3D || d > RECALL_RANGE) continue;
+            double ang = Math.acos(Math.max(-1.0D, Math.min(1.0D, to.scale(1.0D / d).dot(look))));
+            // Whichever is closest to the crosshair wins: a thrown ball or this dropped one.
+            if (ang < Math.max(0.06D, 0.45D / d) && ang < itemAng && (best == null || ang < bestAng)) {
+                bestItem = ie;
+                itemAng = ang;
+            }
+        }
+        if (bestItem != null) {
+            Vec3 at = bestItem.position();
+            com.mobstands.entity.SpinItemEntity.recallItem(p, bestItem);
+            p.serverLevel().playSound(null, at.x, at.y, at.z, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 1.0F, 1.8F);
+            hamonBurst(p.serverLevel(), at, 8, 0.2D);
+            return;
+        }
+        if (best != null && best.recall()) {
+            p.serverLevel().playSound(null, best.getX(), best.getY(), best.getZ(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 1.0F, 1.8F);
+            hamonBurst(p.serverLevel(), best.position(), 8, 0.2D);
+        }
+    }
+
+    public static final double RECALL_RANGE = 64.0D;
+
     private static void launchSpin(ServerPlayer p, net.minecraft.world.item.ItemStack one, float power, int charge, boolean offHand, boolean spread) {
         com.mobstands.entity.SpinItemEntity si = new com.mobstands.entity.SpinItemEntity(com.mobstands.registry.ModEntities.SPIN_ITEM.get(), p.level());
         si.setup(p, one, power);
@@ -1008,11 +1057,16 @@ public final class StandManager {
         Vec3 start = new Vec3(p.getX(), p.getEyeY() - 0.2D, p.getZ()).add(right.scale(0.3D));
         si.setPos(start.x, start.y, start.z);
         double speed = 0.8D + 1.7D * (charge / 40.0D);
+        // One Steel Ball flies a bit slower and not as far; two thrown together keep the full speed and range.
+        if (one.is(com.mobstands.registry.ModItems.STEEL_BALL.get()) && !spread) speed = 0.6D + 1.15D * (charge / 40.0D);
         Vec3 dir = spread ? look.add(right.scale(0.06D)).normalize() : look; // two at once fan out slightly
         si.setDeltaMovement(dir.scale(speed).add(p.getDeltaMovement().multiply(1.0D, 0.0D, 1.0D)));
         si.markThrown();
         // Sky toss: a Steel Ball thrown upward can be steered with your look.
         if (p.getXRot() < -35.0F && one.is(com.mobstands.registry.ModItems.STEEL_BALL.get())) si.setSteerable();
+        // Wall Sense: a Steel Ball thrown while sneaking sticks to the wall it hits and listens for vibrations.
+        // Sneaking and looking up: both - steer it like a missile, and it sticks wherever you fly it into.
+        if (p.isShiftKeyDown() && !p.isPassenger() && one.is(com.mobstands.registry.ModItems.STEEL_BALL.get())) si.setWallSense();
         p.level().addFreshEntity(si);
         p.swing(offHand ? net.minecraft.world.InteractionHand.OFF_HAND : net.minecraft.world.InteractionHand.MAIN_HAND, true);
     }
@@ -1152,9 +1206,90 @@ public final class StandManager {
         }
         SPIN_TURNED.put(e.getUUID(), new long[]{now + TURN_CONFUSE_TICKS, now + TURN_REVERSE_TICKS});
         SPIN_TURNED_BY.put(e.getUUID(), p.getUUID());
+        // A Steel Ball into an archer (skeleton, pillager, anyone with a bow or crossbow): it spins, and when it
+        // comes out of it, it turns its weapon on another mob nearby instead of you.
+        if (steel && e instanceof net.minecraft.world.entity.Mob m && (e instanceof net.minecraft.world.entity.monster.RangedAttackMob
+                || e instanceof net.minecraft.world.entity.monster.CrossbowAttackMob)) {
+            MISFIRE.put(e.getUUID(), new Misfire(now + MISFIRE_TICKS, p.getUUID()));
+            m.setLastHurtByMob(null); // it doesn't hold the hit against you
+        }
         hamonBurst(sl, e.position().add(0.0D, e.getBbHeight() * 0.5D, 0.0D), 16, e.getBbWidth() * 0.5D);
         sl.playSound(null, e.getX(), e.getY(), e.getZ(), com.mobstands.registry.ModSounds.SPIN_HAMON.get(), SoundSource.PLAYERS, 1.0F, 1.0F);
         sl.sendParticles(ParticleTypes.CRIT, e.getX(), e.getEyeY(), e.getZ(), 8, 0.3D, 0.2D, 0.3D, 0.1D);
+    }
+
+    // ---- Steel Ball misfire: a spun archer shoots another mob ----
+    private record Misfire(long until, java.util.UUID by) {}
+    private static final java.util.Map<java.util.UUID, Misfire> MISFIRE = new java.util.HashMap<>();
+    /** Archer UUID -> the mob it's been turned on. */
+    private static final java.util.Map<java.util.UUID, java.util.UUID> MISFIRE_AT = new java.util.HashMap<>();
+    public static final int MISFIRE_TICKS = 200;
+    /** Chance a mob shot by a misfiring archer turns on that archer. */
+    public static final float MISFIRE_RETALIATE = 0.4F;
+
+    private static boolean misfiring(net.minecraft.world.entity.Entity e) {
+        Misfire mf = MISFIRE.get(e.getUUID());
+        return mf != null && e.level().getGameTime() < mf.until();
+    }
+
+    /** While misfiring, it only locks onto the mob it was turned on. */
+    public static boolean misfireBlocksTarget(net.minecraft.world.entity.Entity e, net.minecraft.world.entity.LivingEntity newTarget) {
+        if (!misfiring(e)) return false;
+        java.util.UUID at = MISFIRE_AT.get(e.getUUID());
+        return at == null || newTarget == null || !at.equals(newTarget.getUUID());
+    }
+
+    /** Server tick: once a spun archer stops whirling, it picks another mob nearby and shoots at it. */
+    private static void misfireTick(ServerLevel sl) {
+        if (MISFIRE.isEmpty()) return;
+        long now = sl.getGameTime();
+        java.util.Iterator<java.util.Map.Entry<java.util.UUID, Misfire>> it = MISFIRE.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<java.util.UUID, Misfire> en = it.next();
+            net.minecraft.world.entity.Entity ent = sl.getEntity(en.getKey());
+            if (ent == null) continue;
+            if (!(ent instanceof net.minecraft.world.entity.Mob m) || !m.isAlive() || now >= en.getValue().until()) {
+                if (ent instanceof net.minecraft.world.entity.Mob mm && mm.isAlive()) mm.setTarget(null);
+                it.remove();
+                MISFIRE_AT.remove(en.getKey());
+                continue;
+            }
+            if (TWIRLS.containsKey(m.getUUID())) continue; // still whirling
+            net.minecraft.world.entity.Entity cur = MISFIRE_AT.containsKey(m.getUUID()) ? sl.getEntity(MISFIRE_AT.get(m.getUUID())) : null;
+            if (!(cur instanceof net.minecraft.world.entity.LivingEntity le) || !le.isAlive()) {
+                // Someone else to shoot: the nearest other mob around it (monsters first).
+                net.minecraft.world.entity.LivingEntity pick = null;
+                double best = Double.MAX_VALUE;
+                for (net.minecraft.world.entity.Mob o : sl.getEntitiesOfClass(net.minecraft.world.entity.Mob.class, m.getBoundingBox().inflate(16.0D),
+                        x -> x != m && x.isAlive())) {
+                    double d = o.distanceToSqr(m) * (o instanceof net.minecraft.world.entity.monster.Enemy ? 1.0D : 2.5D);
+                    if (d < best) {
+                        best = d;
+                        pick = o;
+                    }
+                }
+                if (pick == null) {
+                    // Nobody else around: it just stays dazed.
+                    continue;
+                }
+                MISFIRE_AT.put(m.getUUID(), pick.getUUID());
+                cur = pick;
+                sl.sendParticles(ParticleTypes.ANGRY_VILLAGER, m.getX(), m.getEyeY() + 0.4D, m.getZ(), 1, 0.0D, 0.0D, 0.0D, 0.0D);
+            }
+            if (m.getTarget() != cur) m.setTarget((net.minecraft.world.entity.LivingEntity) cur);
+        }
+    }
+
+    /** A mob was hurt: if a misfiring archer did it, 40% of the time it turns on that archer. */
+    public static void misfireHurt(net.minecraft.world.entity.LivingEntity victim, net.minecraft.world.damagesource.DamageSource src) {
+        if (!(src.getEntity() instanceof net.minecraft.world.entity.Mob shooter) || !misfiring(shooter)) return;
+        if (!(victim instanceof net.minecraft.world.entity.Mob vm) || vm == shooter) return;
+        if (vm.getRandom().nextFloat() < MISFIRE_RETALIATE) {
+            vm.setTarget(shooter);
+            ((ServerLevel) vm.level()).sendParticles(ParticleTypes.ANGRY_VILLAGER, vm.getX(), vm.getEyeY() + 0.4D, vm.getZ(), 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        } else {
+            vm.setLastHurtByMob(null); // shrugs it off
+        }
     }
 
     // Mobs whirling from a spin hit: {end time, final yaw}.
@@ -1176,6 +1311,7 @@ public final class StandManager {
 
     /** Server tick: keep the whirling mobs whirling. */
     public static void twirlTick(ServerLevel sl) {
+        misfireTick(sl);
         if (TWIRLS.isEmpty()) return;
         long now = sl.getGameTime();
         java.util.Iterator<java.util.Map.Entry<java.util.UUID, float[]>> it = TWIRLS.entrySet().iterator();
@@ -1227,6 +1363,7 @@ public final class StandManager {
         if (!(proj.getOwner() instanceof net.minecraft.world.entity.LivingEntity shooter) || shooter instanceof net.minecraft.world.entity.player.Player) return;
         long[] t = SPIN_TURNED.get(shooter.getUUID());
         if (t == null || shooter.level().getGameTime() >= t[1]) return;
+        if (misfiring(shooter)) return; // a Steel Ball's misfire: it's shooting someone else, not itself
         ServerLevel sl = (ServerLevel) proj.level();
         java.util.UUID by = SPIN_TURNED_BY.get(shooter.getUUID());
         net.minecraft.world.entity.player.Player player = by == null ? null : sl.getPlayerByUUID(by);
@@ -1588,11 +1725,9 @@ public final class StandManager {
             sync(p);
             return;
         }
-        float k = spinSpeed(d, now);
-        int every = 4 + (int) ((1.0F - k) * 16.0F); // the whirr slows down too
-        if (p.tickCount % every == 0) {
-            p.level().playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.TRIDENT_RIPTIDE_1.value(), SoundSource.PLAYERS,
-                    0.08F + 0.12F * k, 0.9F + 1.1F * k);
+        // The whirr stays at full speed the whole spin, just like the ball itself.
+        if (p.tickCount % 4 == 0) {
+            p.level().playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.TRIDENT_RIPTIDE_1.value(), SoundSource.PLAYERS, 0.2F, 2.0F);
         }
     }
 

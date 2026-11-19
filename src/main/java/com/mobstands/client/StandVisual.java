@@ -177,11 +177,20 @@ final class StandVisual {
             }
             case GER -> {
                 // Guardian Experience Requiem: a humanoid golem - iron and gold, emerald hands and brow, a totem in its chest.
-                root = ctx.bakeLayer(ModelLayers.ZOMBIE);
-                main = new net.minecraft.client.model.HumanoidModel<>(root);
+                // The real Iron Golem model, as a Requiem: golden-warm iron, emeralds in its wrists, knees and brow,
+                // and the totem framed in gold in its chest.
+                root = ctx.bakeLayer(ModelLayers.IRON_GOLEM);
+                main = new IronGolemModel(root);
                 texture = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/ger.png");
+                eyesTex = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/ger_glow.png"); // eyes and emeralds glow
             }
-            case PIGLIN, PIGLIN_REQUIEM -> {
+            case PIGLIN_REQUIEM -> {
+                // Gilded Silence: a Piglin Brute in amethyst-purple leather, amethyst set into its fists.
+                root = ctx.bakeLayer(ModelLayers.PIGLIN_BRUTE);
+                main = new PiglinModel(root);
+                texture = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/gilded_silence.png");
+            }
+            case PIGLIN -> {
                 root = ctx.bakeLayer(ModelLayers.PIGLIN);
                 main = new PiglinModel(root);
                 texture = tex("textures/entity/piglin/piglin.png");
@@ -238,8 +247,9 @@ final class StandVisual {
             case ENDERMAN, ENDER_WORLD -> ctx.bakeLayer(ModelLayers.ENDERMAN);
             case WARDEN -> ctx.bakeLayer(ModelLayers.WARDEN);
             case BLAZE -> ctx.bakeLayer(ModelLayers.BLAZE);
-            case PIGLIN, PIGLIN_REQUIEM -> ctx.bakeLayer(ModelLayers.PIGLIN);
-            case GER -> ctx.bakeLayer(ModelLayers.ZOMBIE);
+            case PIGLIN -> ctx.bakeLayer(ModelLayers.PIGLIN);
+            case PIGLIN_REQUIEM -> ctx.bakeLayer(ModelLayers.PIGLIN_BRUTE);
+            case GER -> ctx.bakeLayer(ModelLayers.IRON_GOLEM);
             case ZOMBIFIED_PIGLIN -> ctx.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN);
             default -> null;
         };
@@ -253,6 +263,18 @@ final class StandVisual {
         initStance();
         this.main.young = false;
         if (this.outer != null) this.outer.young = false;
+    }
+
+    /** GER's body: a person with slim (3-pixel, Alex-style) arms and an Iron Golem's long nose. */
+    private static ModelPart gerRoot() {
+        MeshDefinition gm = net.minecraft.client.model.PlayerModel.createMesh(net.minecraft.client.model.geom.builders.CubeDeformation.NONE, true);
+        var r = gm.getRoot();
+        r.getChild("head").addOrReplaceChild("nose",
+                CubeListBuilder.create().texOffs(56, 16).addBox(-1.0F, -3.0F, -6.0F, 2.0F, 4.0F, 2.0F), PartPose.ZERO);
+        // One clean crest ridge over the top of the head, an emerald at its front.
+        r.getChild("head").addOrReplaceChild("crest",
+                CubeListBuilder.create().texOffs(0, 32).addBox(-1.0F, -9.0F, -4.0F, 2.0F, 1.0F, 8.0F), PartPose.ZERO);
+        return LayerDefinition.create(gm, 64, 64).bakeRoot();
     }
 
     private static ResourceLocation tex(String path) {
@@ -507,7 +529,8 @@ final class StandVisual {
             case SKELETON -> { u = 32; v = 16; }
             case SPIDER -> { u = 0; v = 12; }
             case SLIME -> { u = 0; v = 16; }
-            case PIGLIN, ZOMBIFIED_PIGLIN, PIGLIN_REQUIEM, GER -> { th = 64; u = 40; v = 16; }
+            case PIGLIN, ZOMBIFIED_PIGLIN, PIGLIN_REQUIEM -> { th = 64; u = 40; v = 16; }
+            case GER -> { tw = 128; th = 128; u = 60; v = 21; }
             default -> { }
         }
         MeshDefinition mesh = new MeshDefinition();
@@ -558,6 +581,8 @@ final class StandVisual {
     }
 
     private float lookAround;
+    /** GER: 0..1 how far into its pose it is (the arm rises smoothly), and the last age seen. */
+    private float gerPose, gerLastAge = -1.0F;
 
     private static void rot(ModelPart p, float x, float y, float z) {
         if (p == null) return;
@@ -663,24 +688,21 @@ final class StandVisual {
             return;
         }
         if (type == StandType.GER) {
-            if (posing) {
-                // Side by side with you, like an old friend: leaning its head in toward yours, one arm brought up
-                // across its chest toward your shoulder, the other hanging easy.
-                float s = side; // 1: you're on its left
-                headRot(part("head"), 0.08F, 0.22F * s, -0.22F * s);
-                rot(part("body"), 0.0F, 0.06F * s, -0.05F * s);
-                rot(part("right_arm"), -1.3F + b, -0.75F * s, 0.1F * s);
-                rot(part("left_arm"), b * 0.4F, 0.0F, -0.06F);
-                rot(part("right_leg"), 0.0F, 0.0F, 0.04F);
-                rot(part("left_leg"), 0.0F, 0.0F, -0.04F);
-            } else {
-                // Standing guard: tall and still, arms at its sides.
-                headRot(part("head"), 0.05F, 0.0F, 0.0F);
-                rot(part("right_arm"), b * 0.5F, 0.0F, 0.06F);
-                rot(part("left_arm"), -b * 0.5F, 0.0F, -0.06F);
-                rot(part("right_leg"), 0.0F, 0.0F, 0.0F);
-                rot(part("left_leg"), 0.0F, 0.0F, 0.0F);
-            }
+            // The pose fades in: the arm sweeps up from its side.
+            float step = gerLastAge < 0.0F ? 0.0F : Mth.clamp(age - gerLastAge, 0.0F, 2.0F);
+            gerLastAge = age;
+            gerPose = Mth.clamp(gerPose + (posing ? 0.07F : -0.1F) * step, 0.0F, 1.0F);
+            float w = gerPose * gerPose * (3.0F - 2.0F * gerPose);
+            float s = side; // 1: you're on its left
+            // Like your reference: head leaning in toward yours, the long arm on your side raised up in front of
+            // its body toward you, the other hanging at its side.
+            headRot(part("head"), 0.06F * w, -0.15F * s * w, 0.22F * s * w);
+            ModelPart near = s > 0 ? part("left_arm") : part("right_arm");
+            ModelPart far = s > 0 ? part("right_arm") : part("left_arm");
+            rot(near, Mth.lerp(w, -b * 0.5F, -1.05F + b * 0.3F), 0.0F, 0.0F);
+            rot(far, b * 0.5F, 0.0F, 0.0F);
+            rot(part("right_leg"), 0.0F, 0.0F, 0.0F);
+            rot(part("left_leg"), 0.0F, 0.0F, 0.0F);
             return;
         }
         switch (type) {

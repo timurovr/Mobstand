@@ -81,7 +81,8 @@ public final class TimeStop {
         d.timeStopEnd = now + ticks;     // start + how long it lasts
         StandManager.sync(p);
         // "THE WORLD!": a deep bell, the world draining of colour, a shockwave of light rolling outward.
-        level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.ENDERMAN_STARE, SoundSource.PLAYERS, 1.2F, 0.6F);
+        // A horn call over the top of it ("Call" goat horn, a touch deeper).
+        level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.GOAT_HORN_SOUND_VARIANTS.get(5).value(), SoundSource.PLAYERS, 1.6F, 0.85F);
         level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.BELL_BLOCK, SoundSource.PLAYERS, 2.0F, 0.5F);
         level.playSound(null, p.getX(), p.getY(), p.getZ(), com.mobstands.registry.ModSounds.TIME_STOP.get(), SoundSource.PLAYERS, 2.0F, 1.0F);
         level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 1.5F, 0.5F);
@@ -131,6 +132,17 @@ public final class TimeStop {
             }
         }
         return false;
+    }
+
+    /**
+     * Frozen things can't hurt anyone: touching a frozen slime or magma cube, standing next to a frozen mob,
+     * walking into a frozen arrow - none of it does damage while time is stopped. True = cancel the hit.
+     */
+    public static boolean fromFrozen(LivingEntity victim, DamageSource src) {
+        if (!serverStopped || ZONES.isEmpty()) return false;
+        Entity direct = src.getDirectEntity(), cause = src.getEntity();
+        if (direct != null && direct != victim && isFrozen(direct)) return true;
+        return cause != null && cause != victim && isFrozen(cause);
     }
 
     /** Called from the damage event: a hit on a frozen enemy is stored instead of landing. True = cancel it. */

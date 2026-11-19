@@ -46,6 +46,10 @@ public record StandActionPayload(int action) implements CustomPacketPayload {
                 StandManager.spinOffHand(sp, 15);
             } else if (payload.action() >= 13 && payload.action() <= 16) {
                 StandManager.spinOffHand(sp, payload.action()); // the same Spin controls, for the off hand
+            } else if (payload.action() == 32) {
+                com.mobstands.stand.StandManager.recallBall(sp); // right-click your ball from afar: it comes back
+            } else if (payload.action() == 31) {
+                com.mobstands.stand.HorseSpin.retrieve(sp); // take your Steel Balls back off your horse
             } else if (payload.action() == 30) {
                 com.mobstands.stand.Ger.skip(sp); // skip GER's Return to Zero cutscene
             } else if (payload.action() == 24) {

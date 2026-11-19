@@ -18,5 +18,7 @@ public class MobStandsClient {
         NeoForge.EVENT_BUS.register(ClientEvents.class);
         NeoForge.EVENT_BUS.register(CartRide.class);
         NeoForge.EVENT_BUS.register(GerCutscene.class);
+        NeoForge.EVENT_BUS.register(LoveTrainFx.class);
+        NeoForge.EVENT_BUS.register(HorseBalls.class);
     }
 }

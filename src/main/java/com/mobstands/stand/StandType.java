@@ -42,7 +42,7 @@ public enum StandType {
 
     // Iron Golem Requiem, Gold Experience Requiem style: a protector whose defense is infinite.
     GER("guardian_requiem", "Guardian Experience Requiem", "Iron Golem", StandRarity.LEGENDARY, 0xF2C744, EntityType.IRON_GOLEM,
-            ParticleTypes.CRIT, 0.08, 0.3, 1.05, null,
+            ParticleTypes.CRIT, 0.08, 0.3, 0.9, null,
             StandAbilities.ger(),
             new Passive(1, "Infinite Guard", "Permanent Resistance II while your Stand is out.")),
 
@@ -83,7 +83,7 @@ public enum StandType {
             new Passive(99, "", "")),
 
     // Piglin Requiem, Soft & Wet style: it steals the sound out of a creature - and the power that came with it.
-    PIGLIN_REQUIEM("gilded_silence", "Gilded Silence", "Piglin", StandRarity.LEGENDARY, 0xFFD24A, EntityType.PIGLIN,
+    PIGLIN_REQUIEM("gilded_silence", "Gilded Silence", "Piglin Brute", StandRarity.LEGENDARY, 0xB07CFF, EntityType.PIGLIN_BRUTE,
             ParticleTypes.WAX_ON, 0.08, 0.05, 1.0, null,
             StandAbilities.piglinRequiem(),
             new Passive(99, "", "")),

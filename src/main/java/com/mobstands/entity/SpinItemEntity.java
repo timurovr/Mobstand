@@ -67,12 +67,231 @@ public class SpinItemEntity extends Entity {
     private double curveSign = 1.0D;
     /** Flying back to its owner after a right-click throw. */
     private boolean returning;
+    /** Mobs already hit on the current trip back (each one only once). */
+    private final java.util.Set<java.util.UUID> returnHits = new java.util.HashSet<>();
     private int flightTicks;
     /** Client: recent positions for the golden trail. */
     public final java.util.ArrayDeque<Vec3> trail = new java.util.ArrayDeque<>();
 
     /** Sky toss (Steel Balls only): tossed upward, it then follows where you look, so you can bring it down or swing it sideways. */
     private boolean steer;
+
+    // ---- Wall Sense: stuck to a wall, spinning, counting the vibrations of whatever moves nearby ----
+    private boolean wallSense;
+    /** Stuck to the wall (game time it stuck), or -1. */
+    private long stuckAt = -1L;
+    private Vec3 stuckPos;
+    /** Vibrations counted per mob. */
+    private final Map<UUID, Integer> vibes = new HashMap<>();
+    private final Map<UUID, Vec3> lastSeen = new HashMap<>();
+    /** Locked on: flying straight for it (through anything - it already knows where it is). */
+    private LivingEntity sensed;
+    /** Its way to the target, block by block, around walls (never through them). */
+    private java.util.List<Vec3> sensePath = new java.util.ArrayList<>();
+    private int pathIndex;
+
+    /** Shortest way through open blocks from here to the target (breadth-first, kept small). Empty if none. */
+    private java.util.List<Vec3> findPath(ServerLevel sl, LivingEntity target) {
+        net.minecraft.core.BlockPos start = net.minecraft.core.BlockPos.containing(position().add(0.0D, getBbHeight() * 0.5D, 0.0D));
+        net.minecraft.core.BlockPos goal = net.minecraft.core.BlockPos.containing(target.position().add(0.0D, Math.min(1.0D, target.getBbHeight() * 0.5D), 0.0D));
+        java.util.Map<net.minecraft.core.BlockPos, net.minecraft.core.BlockPos> from = new java.util.HashMap<>();
+        java.util.ArrayDeque<net.minecraft.core.BlockPos> q = new java.util.ArrayDeque<>();
+        from.put(start, start);
+        q.add(start);
+        net.minecraft.core.BlockPos found = null;
+        int budget = 6000;
+        while (!q.isEmpty() && budget-- > 0) {
+            net.minecraft.core.BlockPos c = q.poll();
+            if (c.distManhattan(goal) <= 1) {
+                found = c;
+                break;
+            }
+            for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
+                net.minecraft.core.BlockPos nb = c.relative(d);
+                if (from.containsKey(nb) || nb.distManhattan(start) > 40) continue;
+                if (!sl.getBlockState(nb).getCollisionShape(sl, nb).isEmpty()) continue;
+                from.put(nb, c);
+                q.add(nb);
+            }
+        }
+        java.util.LinkedList<Vec3> path = new java.util.LinkedList<>();
+        if (found == null) return path;
+        for (net.minecraft.core.BlockPos c = found; !c.equals(start); c = from.get(c)) path.addFirst(Vec3.atCenterOf(c));
+        return path;
+    }
+    private static final int SENSE_RANGE = 9, VIBES_NEEDED = 3, SENSE_GIVE_UP = 200, PULSE = 12;
+
+    /** A plain dropped item (a Steel Ball on the ground) pulled back from afar: it becomes a ball flying home. */
+    public static void recallItem(ServerPlayer p, ItemEntity ie) {
+        SpinItemEntity si = new SpinItemEntity(com.mobstands.registry.ModEntities.SPIN_ITEM.get(), ie.level());
+        si.setup(p, ie.getItem().copy(), 1.0F);
+        si.setPos(ie.getX(), ie.getY(), ie.getZ());
+        si.returns = true;
+        si.restingReturn = true;
+        si.setDeltaMovement(0.0D, 0.35D, 0.0D);
+        ie.discard();
+        ie.level().addFreshEntity(si);
+        si.startReturn();
+    }
+
+    /** Whose throw this is. */
+    public boolean ownedBy(ServerPlayer p) {
+        return p.getUUID().equals(owner);
+    }
+
+    /** Called back from far away (right-click on it): it drops whatever it's doing and comes home. */
+    public boolean recall() {
+        if (!thrown && !returning && stuckAt < 0L && sensed == null) {
+            // Lying on the floor (dropped, or wound down): it hops up and comes home.
+            returns = true;
+            restingReturn = true;
+            setDeltaMovement(0.0D, 0.35D, 0.0D);
+            startReturn();
+            return true;
+        }
+        if (returning && sensed == null && stuckAt < 0L) return false;
+        stuckAt = -1L;
+        sensed = null;
+        wallSense = false;
+        steer = false;
+        if (!returning) startReturn();
+        return true;
+    }
+
+    public void setWallSense() {
+        wallSense = true;
+    }
+
+    /** True if Wall Sense handled this tick. */
+    private boolean wallSenseTick(ServerLevel sl, ServerPlayer tp) {
+        if (sensed != null) {
+            // Off the wall and straight for it.
+            if (!sensed.isAlive() || sensed.level() != sl) {
+                sensed = null;
+                startReturn();
+                return true;
+            }
+            Vec3 aim = sensed.position().add(0.0D, sensed.getBbHeight() * 0.5D, 0.0D);
+            Vec3 to = aim.subtract(position());
+            // Around the corner, not through it: re-plan now and then as the target moves.
+            if (flightTicks % 10 == 0) {
+                sensePath = findPath(sl, sensed);
+                pathIndex = 0;
+                if (sensePath.isEmpty() && flightTicks == 0) {
+                    // No open way to it at all: give up and come home.
+                    sensed = null;
+                    startReturn();
+                    return true;
+                }
+            }
+            if (to.length() < 1.1D) {
+                StandManager.spinThrowHit(tp, sensed, power() * 1.3F, true);
+                sl.playSound(null, sensed.getX(), sensed.getY(), sensed.getZ(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 1.2F, 1.6F);
+                StandManager.hamonBurst(sl, aim, 14, 0.4D);
+                sensed = null;
+                startReturn();
+                return true;
+            }
+            // Next waypoint (skip the ones it's already reached); straight at it once it's in the open.
+            Vec3 centre = position().add(0.0D, getBbHeight() * 0.5D, 0.0D);
+            while (pathIndex < sensePath.size() && sensePath.get(pathIndex).distanceTo(centre) < 0.6D) pathIndex++;
+            boolean clear = sl.clip(new net.minecraft.world.level.ClipContext(centre, aim, net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                    net.minecraft.world.level.ClipContext.Fluid.NONE, this)).getType() == net.minecraft.world.phys.HitResult.Type.MISS;
+            Vec3 goal = clear || pathIndex >= sensePath.size() ? aim : sensePath.get(pathIndex);
+            Vec3 dir = goal.subtract(centre);
+            double step = Math.min(0.9D, dir.length());
+            Vec3 move = dir.lengthSqr() < 1.0E-6D ? Vec3.ZERO : dir.normalize().scale(step);
+            // Never into a block: if the step would hit one, stop there and let it re-plan.
+            net.minecraft.world.phys.BlockHitResult bh = sl.clip(new net.minecraft.world.level.ClipContext(centre, centre.add(move),
+                    net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, this));
+            if (bh.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                move = bh.getLocation().subtract(centre).scale(0.8D);
+                flightTicks = (flightTicks / 10) * 10 + 9; // re-plan next tick
+            }
+            setDeltaMovement(move);
+            Vec3 next = position().add(move);
+            setPos(next.x, next.y, next.z);
+            if (++flightTicks % 2 == 0) StandManager.hamonBurst(sl, position(), 1, 0.05D);
+            if (flightTicks > 160) {
+                sensed = null;
+                startReturn();
+            }
+            return true;
+        }
+        if (stuckAt < 0L) return false;
+        long now = sl.getGameTime();
+        setPos(stuckPos.x, stuckPos.y, stuckPos.z);
+        setDeltaMovement(Vec3.ZERO);
+        if (now - stuckAt > SENSE_GIVE_UP || tp.distanceTo(this) > 48.0D) {
+            stuckAt = -1L;
+            tp.displayClientMessage(net.minecraft.network.chat.Component.literal("No vibrations...").withStyle(s -> s.withColor(0x7FB8C9)), true);
+            startReturn();
+            return true;
+        }
+        if ((now - stuckAt) % PULSE != 0) return true;
+        // A pulse: every enemy nearby gives off a vibration it can feel - moving ones twice as much.
+        sl.playSound(null, getX(), getY(), getZ(), SoundEvents.SCULK_CLICKING, SoundSource.PLAYERS, 0.7F, 1.4F);
+        LivingEntity best = null;
+        int bestCount = 0;
+        for (LivingEntity e : sl.getEntitiesOfClass(LivingEntity.class, getBoundingBox().inflate(SENSE_RANGE),
+                x -> x != tp && x.isAlive() && StandCombat.valid(tp, x)
+                        && x instanceof net.minecraft.world.entity.monster.Enemy)) { // only evil mobs
+            Vec3 was = lastSeen.put(e.getUUID(), e.position());
+            boolean moving = was != null && was.distanceToSqr(e.position()) > 0.01D;
+            int c = vibes.merge(e.getUUID(), moving ? 2 : 1, Integer::sum);
+            // The vibration travelling from it to the ball, like a sculk sensor's.
+            sl.sendParticles(new net.minecraft.core.particles.VibrationParticleOption(
+                            new net.minecraft.world.level.gameevent.EntityPositionSource(this, 0.0F), 10),
+                    e.getX(), e.getY() + e.getBbHeight() * 0.5D, e.getZ(), 1, 0.0D, 0.0D, 0.0D, 0.0D);
+            if (c > bestCount) {
+                bestCount = c;
+                best = e;
+            }
+        }
+        if (best != null) {
+            tp.displayClientMessage(net.minecraft.network.chat.Component.literal("Vibrations: " + Math.min(bestCount, VIBES_NEEDED) + "/" + VIBES_NEEDED)
+                    .withStyle(s -> s.withColor(0x3FD0C9)), true);
+        }
+        if (best != null && bestCount >= VIBES_NEEDED) {
+            // Counted enough: it knows exactly where you are.
+            sensed = best;
+            stuckAt = -1L;
+            flightTicks = 0;
+            sl.playSound(null, getX(), getY(), getZ(), SoundEvents.SCULK_SHRIEKER_SHRIEK, SoundSource.PLAYERS, 0.5F, 2.0F);
+            sl.playSound(null, getX(), getY(), getZ(), com.mobstands.registry.ModSounds.SPIN_CRACKLE.get(), SoundSource.PLAYERS, 1.0F, 1.2F);
+            tp.displayClientMessage(net.minecraft.network.chat.Component.literal("Found it!").withStyle(s -> s.withColor(0xE8C25A).withBold(true)), true);
+        }
+        return true;
+    }
+    /** This throw already dove under your horse and launched it. */
+    private boolean dived;
+
+    /**
+     * Sky toss on horseback, looking straight down: the ball dives under your horse and launches it skyward.
+     * Works any time during a steerable throw - on the way out, after a hit or a bounce, or on the way back.
+     * True while it's diving (it moved itself this tick).
+     */
+    private boolean diveUnderHorse(ServerLevel sl, ServerPlayer tp) {
+        if (!steer || dived || flightTicks <= 5 && !returning) return false;
+        if (!(tp.getVehicle() instanceof net.minecraft.world.entity.animal.horse.AbstractHorse horse) || tp.getXRot() <= 60.0F) return false;
+        // Aim where the horse is going, not where it was: a galloping horse moves a lot each tick.
+        Vec3 moved = new Vec3(horse.getX() - horse.xo, 0.0D, horse.getZ() - horse.zo);
+        Vec3 under = horse.position().add(moved).add(0.0D, 0.3D, 0.0D);
+        Vec3 to = under.subtract(position());
+        if (to.length() < 2.0D || horse.position().add(0.0D, 0.3D, 0.0D).distanceTo(position()) < 2.0D) {
+            dived = true;
+            com.mobstands.stand.HorseSpin.launch(sl, horse, tp);
+            setPos(under.x, under.y, under.z);
+            if (!returning) startReturn();
+            return true;
+        }
+        double sp = Math.max(1.6D, Math.min(2.8D, getDeltaMovement().length() + 0.3D));
+        setDeltaMovement(to.normalize().scale(sp));
+        Vec3 next = position().add(getDeltaMovement());
+        setPos(next.x, next.y, next.z);
+        if (flightTicks % 2 == 0) StandManager.hamonBurst(sl, position(), 1, 0.05D);
+        return true;
+    }
     private static final int STEER_TICKS = 80;
 
     public void setSteerable() {
@@ -131,6 +350,7 @@ public class SpinItemEntity extends Entity {
      */
     private void flyThrown(ServerLevel sl, ServerPlayer tp) {
         Vec3 vel = getDeltaMovement().add(0.0D, -0.03D, 0.0D);
+        if (diveUnderHorse(sl, tp)) return;
         if (steer && !bounced && chainHit.isEmpty() && flightTicks > 5) {
             // Sky toss: once it's up, it curves toward wherever you're looking. Look down at a mob and it dives;
             // look to the side and it swings over. Better spinners turn it sharper.
@@ -161,6 +381,21 @@ public class SpinItemEntity extends Entity {
         Vec3 n = Vec3.atLowerCornerOf(bh.getDirection().getNormal());
         Vec3 at = bh.getLocation().add(n.scale(half + 0.02D));
         setPos(at.x, at.y - half, at.z);
+        if (wallSense && stuckAt < 0L && sensed == null && bounces == 0) {
+            // Wall Sense: it sticks right there, spinning in place, and starts listening.
+            stuckAt = sl.getGameTime();
+            stuckPos = position();
+            setDeltaMovement(Vec3.ZERO);
+            vibes.clear();
+            lastSeen.clear();
+            net.minecraft.world.level.block.state.BlockState ws = sl.getBlockState(bh.getBlockPos());
+            sl.sendParticles(new net.minecraft.core.particles.BlockParticleOption(net.minecraft.core.particles.ParticleTypes.BLOCK, ws),
+                    at.x, at.y, at.z, 10, 0.1D, 0.1D, 0.1D, 0.1D);
+            sl.playSound(null, at.x, at.y, at.z, SoundEvents.SCULK_SENSOR_PLACE, SoundSource.PLAYERS, 1.0F, 1.2F);
+            sl.playSound(null, at.x, at.y, at.z, SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 0.5F, 0.8F);
+            tp.displayClientMessage(net.minecraft.network.chat.Component.literal("Listening for vibrations...").withStyle(s -> s.withColor(0x3FD0C9)), true);
+            return;
+        }
         // A soft bounce: the push off the surface is damped a lot, the slide along it a little.
         Vec3 normalPart = n.scale(vel.dot(n));
         Vec3 slide = vel.subtract(normalPart);
@@ -222,6 +457,7 @@ public class SpinItemEntity extends Entity {
         }
         thrown = false;
         returning = true;
+        returnHits.clear();
         flightTicks = 0;
         entityData.set(FLYING, true);
         level().playSound(null, getX(), getY(), getZ(), SoundEvents.TRIDENT_RETURN, SoundSource.PLAYERS, 0.8F, 1.3F);
@@ -347,6 +583,8 @@ public class SpinItemEntity extends Entity {
                 thrown = false;
                 returning = false;
                 entityData.set(FLYING, false);
+            } else if (returning && diveUnderHorse(tsl, tp)) {
+                flightTicks++; // still coming home - but first it dives under your horse
             } else if (returning) {
                 // Flying back to you (through anything in the way), faster and faster.
                 Vec3 target = tp.position().add(0.0D, tp.getBbHeight() * 0.6D, 0.0D);
@@ -364,9 +602,19 @@ public class SpinItemEntity extends Entity {
                 Vec3 dir = to.scale(1.0D / d);
                 Vec3 side = new Vec3(-dir.z, 0.0D, dir.x).normalize().scale(curveSign * sp * 0.9D * Math.min(1.0D, d / 7.0D));
                 setDeltaMovement(getDeltaMovement().lerp(dir.scale(sp).add(side), 0.3D));
+                // On the way home it still hits whatever is in its path - each mob once per trip back, a bit softer,
+                // and it keeps flying on through them.
+                for (LivingEntity t : tsl.getEntitiesOfClass(LivingEntity.class, getBoundingBox().expandTowards(getDeltaMovement()).inflate(0.15D),
+                        x -> x != tp && x != tp.getVehicle() && x.isAlive() && StandCombat.valid(tp, x) && !returnHits.contains(x.getUUID()))) {
+                    returnHits.add(t.getUUID());
+                    StandManager.spinThrowHit(tp, t, power() * 0.7F, isSteel());
+                    tsl.playSound(null, t.getX(), t.getY(), t.getZ(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.9F, 1.4F);
+                }
                 Vec3 next = position().add(getDeltaMovement());
                 setPos(next.x, next.y, next.z);
                 if (flightTicks > 200) giveBack(tp); // safety net
+                return;
+            } else if (wallSense && wallSenseTick(tsl, tp)) {
                 return;
             } else {
                 // Thrown: check for an enemy in its path before moving.
@@ -374,7 +622,7 @@ public class SpinItemEntity extends Entity {
                 LivingEntity hit = null;
                 double best = Double.MAX_VALUE;
                 for (LivingEntity t : tsl.getEntitiesOfClass(LivingEntity.class, getBoundingBox().expandTowards(vel).inflate(0.05D), // a tight hitbox: you have to aim
-                        x -> x != tp && x.isAlive() && StandCombat.valid(tp, x))) {
+                        x -> x != tp && x != tp.getVehicle() && x.isAlive() && StandCombat.valid(tp, x))) {
                     double dd = t.distanceToSqr(this);
                     if (dd < best) {
                         best = dd;

@@ -37,7 +37,7 @@ public final class StandHud {
             case BLAZE -> new Palette(0xFF8A1E, 0x3A1A05);      // blaze-rod orange
             case IRON_GOLEM -> new Palette(0xD8D0C4, 0x2C2A26); // iron with a hint of rust
             case GER -> new Palette(0xF2C744, 0x1E1A0C);        // gold on deep bronze
-            case PIGLIN_REQUIEM -> new Palette(0xFFD24A, 0x2A1A06); // bright gold
+            case PIGLIN_REQUIEM -> new Palette(0xB07CFF, 0x1C1030); // amethyst on deep purple
             case PHANTOM -> new Palette(0x7FA0E0, 0x161C30);    // night blue
             case ENDERMAN -> new Palette(0xD65CFF, 0x120A18);   // purple eyes on black
             case ENDER_WORLD -> new Palette(0xFFD54A, 0x14101E); // gold on black: The World
@@ -98,7 +98,16 @@ public final class StandHud {
         int base = pal.base();
         float v = visibility;
 
+        // Wide enough for the name plus "Requiem"/"Lv 15", and for every ability with its cooldown timer.
         int w = 138;
+        w = Math.max(w, mc.font.width(t.standName()) + mc.font.width(t.requiem() ? "Requiem" : "Lv 15") + 12);
+        for (int slot = 0; slot < StandData.SLOTS; slot++) {
+            Ability ab = t.ability(slot);
+            if (ab.isEmpty()) continue;
+            String lab = "[" + (t == StandType.AXOLOTL && slot == 0 ? "Auto" : KeyLabels.of(KEYS[slot])) + "] " + ab.name();
+            if (d.getLevel() < ab.unlockLevel()) lab += "  Lv" + ab.unlockLevel();
+            w = Math.max(w, mc.font.width(lab) + mc.font.width("88.8") + 12);
+        }
         int x = 6;
         // The panel grows with the number of rows (some Stands have a 5th ability).
         int rows = 0;
