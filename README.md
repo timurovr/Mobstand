@@ -1,75 +1,110 @@
 # Mob Stands (Minecraft 1.21.1, NeoForge)
 
-Every player can awaken a Minecraft mob as a personal, JoJo-style **Stand**: a translucent, glowing spirit that
-floats beside you, fights when you tell it to, protects you on its own, and levels up with you.
+A JoJo-inspired mod: every player can awaken a Minecraft mob as their own **Stand**. It's a translucent, glowing spirit
+that floats beside you, fights when you tell it to, and levels up with you. Some Stands can go further and awaken a
+**Requiem**. On top of that there's Gyro's **Spin**, learned from a Steel Ball.
+
+Current version: **1.0**
+
+## Download
+Grab the jar from the [Releases](../../releases) page and drop it in your `mods` folder (NeoForge 21.1.x for
+Minecraft 1.21.1). Every release has its jar attached automatically.
 
 ## Build and run
-Requires **JDK 21**. This archive has no Gradle wrapper (it could not be downloaded offline), so do one of:
-* copy `gradlew`, `gradlew.bat` and the `gradle/` folder from the official NeoForge 1.21.1 MDK, **or**
-* with Gradle 8.8+ installed run `gradle wrapper --gradle-version 8.10.2`.
-
-Then:
+Requires **JDK 21**.
 ```
 ./gradlew runClient      # dev client
 ./gradlew build          # jar in build/libs/
 ```
-`neo_version` in `gradle.properties` is `21.1.77`; bump it to the newest 21.1.x if Gradle cannot resolve it.
 
 ## Getting a Stand
-* **Echoing Arrow**: right click to awaken a random Stand; if you already have one, it rerolls into a *different* Stand (level/XP reset). Craft: arrow + emerald + echo shard (shapeless). Also in the creative tab "Combat".
-* Rarity (roll weight per Stand): Common 50, Uncommon 28, Rare 14, Epic 6, Legendary 2. Rarer Stands deal more damage and have more unusual abilities.
-* Operators: `/stand set <type>`, `/stand level <1-15>`, `/stand clear`.
+* **Echoing Arrow**: right click to awaken a random Stand. If you already have one, it rerolls into a *different*
+  Stand (level and XP reset). Craft: arrow + emerald + echo shard (shapeless).
+* **Stand pools**: at first you can only roll Overworld Stands. Reaching the Nether unlocks the Nether Stands
+  (Blaze, Piglin...), and reaching the End unlocks the rest.
+* Rarity (roll weight): Common 50, Uncommon 28, Rare 14, Epic 6, Legendary 2.
+* Requiems are never rolled. You earn them (see below).
 
-## Controls (all rebindable in Options > Controls > Mob Stands)
+## Controls (rebindable in Options > Controls > Mob Stands)
 | Key | Action |
 |---|---|
 | R | Summon / dismiss |
-| Right click | Basic attack (see note) |
-| Z / X / C | Ability 1 / Ability 2 / Ultimate |
-| G | Stand info screen |
-
-Note: right click is shared with vanilla "use". The Stand only takes it when your hands are empty and you are not looking at a block or a villager. Rebind the basic attack to any other key to remove this restriction.
+| Right click | Basic attack (only with empty hands, not looking at a block or villager) |
+| Z / X / C / V | Abilities 1-4 |
+| J | Stand pose |
+| G | Stand menu (abilities, passives, lore, Requiem trial progress) |
 
 ## The Stands
-| Stand | Mob | Rarity | Basic / Z / X / C |
+| Stand | Mob | Abilities |
+|---|---|---|
+| Jelly Rebound | Slime | Squish Slam, Ricochet Blob, Super Bounce, Mega Quake |
+| Rattling Marksman | Skeleton | Bone Arrow, Rapid Fire, Piercing Shot, Arrow Storm |
+| Weaver of Webs | Spider | Fang Strike, Web Shot, Spider Climb, Web Cocoon |
+| Green Detonator | Creeper | Fuse Punch, Hissing Burst, Kamikaze Rush, Big Bang, Heart Attack (Sheer Heart Attack-style mini creeper) |
+| Iron Colossus | Iron Golem | Iron Fist, Barrage, Ground Slam, World Breaker |
+| Midnight Wing | Phantom | Talon Swipe, Sky Rush, Wing Lift, Midnight Swarm, Dream Walk |
+| Void Stalker | Enderman | Void Slash, Barrage, Blink, Void Collapse |
+| Deep Dark Monarch | Warden | Dark Fist, Barrage, Sonic Boom, Sonic Devastation |
+| Little Lullaby | Allay | Allay Rush, Allay Lift, Allay Hold, Roam |
+| Muddy Fortune | Pig | Oink (lures monsters away) |
+| Lazarus Smile | Axolotl | Play Dead, Soul Swap, Bubble Nursery, Neoteny |
+| Weeping Deluge | Squid | November Rain, Downpour, Rain Shot |
+| Iron Express | Minecart | Rail Rider, Powered Rails, Nitro |
+| Gallop Crown | Horse | Runs with you |
+| Ember Sovereign | Blaze *(Nether)* | Rod Strike, Flame Barrage, Ring of Fire, Inferno Burst |
+| Gilded Swine | Piglin *(Nether)* | Gilded Jab, Snatch |
+| Thunderborn Swine | Zombified Piglin | Rusted Thrust. Only from a Pig Stand struck by lightning |
+
+Every punch lands with a MUDA-style burst of ghost fists. Stands never punch on their own unless you turn auto-assist
+on in the config. Max level is 15. XP comes from using abilities and from kills.
+
+## Requiems
+| Requiem | From | How to earn it | Abilities |
 |---|---|---|---|
-| Jelly Rebound | Slime | Common | Squish Slam / Ricochet Blob (bouncing projectile) / Super Bounce / Mega Quake |
-| Rattling Marksman | Skeleton | Common | Bone Arrow / Rapid Fire / Piercing Shot / Arrow Storm |
-| Weaver of Webs | Spider | Uncommon | Fang Strike (poison) / Web Shot / Spider Climb / Web Cocoon |
-| Green Detonator | Creeper | Uncommon | Fuse Punch / Hissing Burst / Kamikaze Rush (self-detonation, Stand reforms) / Big Bang |
-| Ember Sovereign | Blaze | Rare | Fire Bolt / Flame Barrage / Ring of Fire / Inferno Burst |
-| Iron Colossus | Iron Golem | Rare | Iron Fist / Ground Slam / Iron Guard / World Breaker |
-| Midnight Wing | Phantom | Rare | Talon Swipe / Sky Rush (dash) / Wing Lift / Midnight Swarm |
-| Void Stalker | Enderman | Epic | Void Slash / Blink / Shadow Step (backstab) / Void Collapse |
-| Deep Dark Monarch | Warden | Legendary | Dark Fist / Sonic Boom / Sculk Pulse / Sonic Devastation |
+| **The Ender World** | Enderman | Requiem Trial: kill the Ender Dragon with your Stand out, spend a full day in the End, then pose at midnight | Void Jab, Barrage, Time Skip, **Time Stop** |
+| **Gilded Silence** | Piglin | Requiem Trial (shown in the Stand menu) | Steal Sound, Switch Sound, Release Sound, Go Beyond |
+| **Guardian Experience Requiem** | Iron Golem | Use a Stand Arrow during a raid at 3 hearts or less: a 50/50. On a fail the arrow breaks, and there's a 15% chance your Stand drops to level 1 | Requiem Fist, MUDA Barrage, **Return to Zero**, Life Giver, Golden Barrier |
 
-Each Stand has its own unlock levels (rarer = later), a passive perk, and its own damage growth per level.
-Max level is 15. XP comes from using abilities and from kills made by you or your Stand.
+* **Time Stop** uses the game's real tick freeze. Arrows stop in the air, and nothing frozen can hurt you.
+* **Gilded Silence** steals a creature's sound with a sculk vibration (around 45 sounds, from creepers to slimes),
+  then releases that sound's power.
+* **Return to Zero** is a counter with a skippable cutscene: the attacker rewinds, its copies look back, and it dies
+  over and over, gone forever. Its loot goes to your inventory. Against bosses it just nullifies the attack, unless the
+  boss is at 10% health or less.
+* **Golden Barrier** (V) is a Love Train-style wall of light.
 
-## Architecture
+## Spin
+Right click a **Steel Ball** to learn the Spin.
+* **Spin something**: hold Q with an item in hand, then tap Q on the beat. Shift spins a second Steel Ball as well.
+* **Throw**: hold right click to wind up, let go to throw. Steel Balls bounce, chain between mobs and fly back to you.
+  Two balls thrown together go faster and further.
+* **Missile**: throw while looking up, then steer it with your view.
+* **Wall Sense**: throw while sneaking. The ball sticks to the wall, counts the vibrations of evil mobs within 9 blocks,
+  then goes for one around corners. Sneak + look up to steer it like a missile first.
+* **Call it back**: right click any of your balls from up to 64 blocks away, thrown or dropped.
+* **Archers misfire**: a Steel Ball hit spins skeletons and pillagers. They turn their bows on other mobs, and those
+  mobs fight back 40% of the time.
+* **On horseback**:
+  * Throw while looking down: the balls spin on the horse's hips and boost its speed and jump. Zig-zagging gains extra
+    speed, like a ship tacking against the wind.
+  * Hold Q, then press Shift, to spin both balls without dismounting.
+  * Look down and right click with an empty hand to take the balls back.
+  * Missile + look down: the ball dives under the horse and launches it into the air.
+
+## Commands (operators)
+`/stand set <type>`, `/stand level <1-15>`, `/stand clear`, `/stand aura on|off`, `/stand spin learn|forget`
+
+## Code layout
 ```
 com.mobstands
-  MobStands               common entry point, registers everything
-  config/StandConfig      explosions-destroy-blocks, damage multiplier, auto-assist
-  stand/                  StandType (9 Stands), StandData (persistent attachment), StandManager (server authority),
-                          StandAbilities (36 abilities), AbilityContext (targeting/damage/FX helpers),
-                          StandCombat (never hits owner, pets, villagers), StandPassives, TickScheduler
-  entity/StandEntity      NOT a Mob: no AI/pathing/spawning/damage; position driven by the owner every tick
-  entity/StandProjectile  invisible server-driven projectile (fireball, arrow, web, bouncing slime), particle visuals
-  registry/ item/ network/ event/   registries, Echoing Arrow, 2 payloads, events + /stand command
-  client/                 renderer (translucent + additive aura), key mappings, HUD, info screen
+  stand/     StandType, StandData (saved per player), StandManager, StandAbilities, Ger, TimeStop,
+             SoundSteal, RequiemTrials, HorseSpin
+  entity/    StandEntity (driven by its owner, no AI), SpinItemEntity (spinning and thrown items), HeartAttackEntity
+  network/   payloads between client and server
+  client/    renderers, poses, HUD, Stand menu, cutscenes, Spin input and effects
+  mixin/     TickRateManagerMixin (Time Stop)
 ```
-Key design points:
-* **Persistence**: `StandData` is a data attachment with `copyOnDeath`; the Stand entity is `noSave` and is re-created from the data on login, respawn, dimension change and after teleports (self-healing check once per second).
-* **One Stand per player**: the owner's data stores the active Stand's UUID; any entity whose UUID does not match removes itself. Toggle has an anti-spam delay.
-* **Multiplayer**: the entity is tracked like any entity, so everyone sees it; type/animation/hidden state are synced entity data. Only the owner receives the data packet used for HUD/GUI.
-* **Never attacks the owner / mob spawning untouched**: all damage goes through `StandCombat.valid`; the Stand is `MobCategory.MISC` and has no spawn placement.
-* **Protect AI**: if a hostile mob is targeting the owner (or recently hit/was hit by the owner) the Stand strikes it on its own at ~60% of manual damage.
-* **Look**: vanilla mob model rendered translucent, tinted, fullbright, plus an additive glow pass, hover bob, lunge/pulse animations, per-type aura particles.
 
-## Known limitations (please read)
-* **This code was written without being able to download Minecraft/NeoForge in the authoring sandbox.** Every file was syntax-checked with javac and cross-references between the mod's own classes were verified, but it has *not* been compiled against NeoForge or run in-game. Expect to fix a handful of small API mismatches on the first `./gradlew build`; send me the output and I will fix them.
-* Mob models are reused from vanilla, so vanilla secondary layers (e.g. Warden glow layers, Creeper charge) are not drawn; Enderman, Spider and Phantom eyes are.
-* Spider Climb is server-assisted (vertical push when you press against a wall) and can look slightly jerky on high latency.
-* Sounds and particles are vanilla ones (no custom sound/texture assets).
-* Explosions never destroy blocks unless enabled in the config.
+## Notes
+* Mob models are vanilla ones, rendered translucent with an extra glow.
+* Explosions don't break blocks unless you turn that on in the config.
