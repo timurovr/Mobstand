@@ -45,12 +45,18 @@ public final class Mandom {
     public static final int WINDOW = 120, STEP = 4;
     public static final double RADIUS = 40.0D;
 
-    private record EState(Vec3 pos, float yRot, float xRot, float yHead, Vec3 vel, float health, int fire, int air, int food, float sat) {}
+    private record EState(Vec3 pos, float yRot, float xRot, float yHead, Vec3 vel, float health, int fire, int air, int food, float sat,
+                          net.minecraft.world.item.ItemStack[] equip, java.util.List<net.minecraft.world.item.ItemStack> carried,
+                          net.minecraft.nbt.ListTag playerInv) {}
+
+    private static final net.minecraft.world.entity.EquipmentSlot[] SLOTS = net.minecraft.world.entity.EquipmentSlot.values();
 
     private static final class Frame {
         long time;
         final Map<UUID, EState> states = new HashMap<>();
         final Set<UUID> present = new HashSet<>();
+        /** Every dropped item lying around, exactly as it was (so things picked up since come back). */
+        final Map<UUID, CompoundTag> items = new HashMap<>();
     }
 
     private record BlockChange(long time, BlockPos pos, BlockState old) {}
@@ -93,11 +99,29 @@ public final class Mandom {
                 f.time = now;
                 for (Entity e : sl.getEntities((Entity) null, box(r.center), x -> !(x instanceof StandEntity))) {
                     f.present.add(e.getUUID());
+                    if (e instanceof ItemEntity ie) {
+                        CompoundTag t = new CompoundTag();
+                        if (ie.saveAsPassenger(t)) f.items.put(e.getUUID(), t);
+                    }
                     if (e instanceof LivingEntity le) {
                         int food = e instanceof Player pl ? pl.getFoodData().getFoodLevel() : 0;
                         float sat = e instanceof Player pl ? pl.getFoodData().getSaturationLevel() : 0.0F;
+                        // What they're holding and carrying, so items picked up since go back to where they were.
+                        net.minecraft.world.item.ItemStack[] equip = null;
+                        java.util.List<net.minecraft.world.item.ItemStack> carried = null;
+                        net.minecraft.nbt.ListTag inv = null;
+                        if (e instanceof Player pl) {
+                            inv = pl.getInventory().save(new net.minecraft.nbt.ListTag());
+                        } else if (e instanceof net.minecraft.world.entity.Mob mob) {
+                            equip = new net.minecraft.world.item.ItemStack[SLOTS.length];
+                            for (int i = 0; i < SLOTS.length; i++) equip[i] = mob.getItemBySlot(SLOTS[i]).copy();
+                            if (mob instanceof net.minecraft.world.entity.npc.InventoryCarrier ic) {
+                                carried = new ArrayList<>();
+                                for (int i = 0; i < ic.getInventory().getContainerSize(); i++) carried.add(ic.getInventory().getItem(i).copy());
+                            }
+                        }
                         f.states.put(e.getUUID(), new EState(e.position(), e.getYRot(), e.getXRot(), e.getYHeadRot(), e.getDeltaMovement(),
-                                le.getHealth(), e.getRemainingFireTicks(), e.getAirSupply(), food, sat));
+                                le.getHealth(), e.getRemainingFireTicks(), e.getAirSupply(), food, sat, equip, carried, inv));
                     }
                 }
                 r.frames.addLast(f);
@@ -194,6 +218,13 @@ public final class Mandom {
                 e.discard();
             }
         }
+        // Dropped items go back to how they were - including ones picked up since (by you, a player or a mob).
+        for (Map.Entry<UUID, CompoundTag> it : f.items.entrySet()) {
+            Entity now = sl.getEntity(it.getKey());
+            if (now != null) now.discard();
+            Entity back = EntityType.loadEntityRecursive(it.getValue().copy(), sl, x -> x);
+            if (back != null) sl.addFreshEntity(back);
+        }
         // Mobs that died come back.
         for (Fallen d : r.fallen) {
             if (d.time < since) continue;
@@ -221,6 +252,18 @@ public final class Mandom {
                 if (e instanceof Mob m) m.getNavigation().stop();
             }
             le.setHealth(Math.min(le.getMaxHealth(), Math.max(1.0F, s.health)));
+            // ...holding and carrying exactly what they had.
+            if (s.playerInv != null && e instanceof Player pl) {
+                pl.getInventory().load(s.playerInv);
+                pl.containerMenu.broadcastChanges();
+            }
+            if (s.equip != null && e instanceof net.minecraft.world.entity.Mob mob) {
+                for (int i = 0; i < SLOTS.length; i++) mob.setItemSlot(SLOTS[i], s.equip[i].copy());
+            }
+            if (s.carried != null && e instanceof net.minecraft.world.entity.npc.InventoryCarrier ic) {
+                for (int i = 0; i < Math.min(s.carried.size(), ic.getInventory().getContainerSize()); i++)
+                    ic.getInventory().setItem(i, s.carried.get(i).copy());
+            }
             e.setDeltaMovement(s.vel);
             e.setRemainingFireTicks(s.fire);
             e.setAirSupply(s.air);

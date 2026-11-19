@@ -11,9 +11,9 @@ public record Ability(String name, String description, int unlockLevel, int base
         return name.isEmpty();
     }
 
-    /** Cooldown shrinks by 2% per Stand level (max 30%). */
+    /** Cooldown shrinks with each Stand level, down to 30% off at max level (10). */
     public int cooldownTicks(int standLevel) {
-        double reduction = Math.min(0.30D, 0.02D * (standLevel - 1));
+        double reduction = Math.min(0.30D, 0.30D / 9.0D * (standLevel - 1));
         return Math.max(4, (int) (baseCooldownTicks * (1.0D - reduction)));
     }
 }

@@ -46,6 +46,14 @@ public record StandActionPayload(int action) implements CustomPacketPayload {
                 StandManager.spinOffHand(sp, 15);
             } else if (payload.action() >= 13 && payload.action() <= 16) {
                 StandManager.spinOffHand(sp, payload.action()); // the same Spin controls, for the off hand
+            } else if (payload.action() == 36) {
+                com.mobstands.stand.SoulControl.ability(sp); // Soul Control: the possessed mob's own power
+            } else if (payload.action() == 35) {
+                com.mobstands.stand.SoulControl.attack(sp); // Soul Control: the possessed mob attacks
+            } else if (payload.action() == 33) {
+                StandManager.pilotShoot(sp);  // Aerosmith: fire
+            } else if (payload.action() == 34) {
+                StandManager.pilotLand(sp);   // Aerosmith: bring it back
             } else if (payload.action() == 32) {
                 com.mobstands.stand.StandManager.recallBall(sp); // right-click your ball from afar: it comes back
             } else if (payload.action() == 31) {

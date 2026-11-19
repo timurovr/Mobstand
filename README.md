@@ -4,7 +4,7 @@ A JoJo-inspired mod: every player can awaken a Minecraft mob as their own **Stan
 that floats beside you, fights when you tell it to, and levels up with you. Some Stands can go further and awaken a
 **Requiem**. On top of that there's Gyro's **Spin**, learned from a Steel Ball.
 
-Current version: **1.0**
+Current version: **1.1**
 
 ## Download
 Grab the jar from the [Releases](../../releases) page and drop it in your `mods` folder (NeoForge 21.1.x for
@@ -21,7 +21,7 @@ Requires **JDK 21**.
 * **Echoing Arrow**: right click to awaken a random Stand. If you already have one, it rerolls into a *different*
   Stand (level and XP reset). Craft: arrow + emerald + echo shard (shapeless).
 * **Stand pools**: at first you can only roll Overworld Stands. Reaching the Nether unlocks the Nether Stands
-  (Blaze, Piglin...), and reaching the End unlocks the rest.
+  (Blaze, Piglin...), and reaching the End unlocks the rest. The Stand menu (G) shows which pools you've unlocked.
 * Rarity (roll weight): Common 50, Uncommon 28, Rare 14, Epic 6, Legendary 2.
 * Requiems are never rolled. You earn them (see below).
 
@@ -42,21 +42,35 @@ Requires **JDK 21**.
 | Weaver of Webs | Spider | Fang Strike, Web Shot, Spider Climb, Web Cocoon |
 | Green Detonator | Creeper | Fuse Punch, Hissing Burst, Kamikaze Rush, Big Bang, Heart Attack (Sheer Heart Attack-style mini creeper) |
 | Iron Colossus | Iron Golem | Iron Fist, Barrage, Ground Slam, World Breaker |
-| Midnight Wing | Phantom | Talon Swipe, Sky Rush, Wing Lift, Midnight Swarm, Dream Walk |
+| Midnight Wing | Phantom | Talon Swipe, Sky Rush, **Aerosmith** (pilot it, see below), Midnight Swarm, Dream Walk |
 | Void Stalker | Enderman | Void Slash, Barrage, Blink, Void Collapse |
 | Deep Dark Monarch | Warden | Dark Fist, Barrage, Sonic Boom, Sonic Devastation |
 | Little Lullaby | Allay | Allay Rush, Allay Lift, Allay Hold, Roam |
 | Muddy Fortune | Pig | Oink (lures monsters away) |
-| Lazarus Smile | Axolotl | Play Dead, Soul Swap, Bubble Nursery, Neoteny |
+| Lazarus Smile | Axolotl | Play Dead, Soul Swap, **Soul Control** (possess a mob, see below), Neoteny (rewinds 6 seconds, items and inventories too) |
 | Weeping Deluge | Squid | November Rain, Downpour, Rain Shot |
 | Iron Express | Minecart | Rail Rider, Powered Rails, Nitro |
+| Ancient Nose | Sniffer | Snout Bump, **Sniff Out** (structure gamble, see below) |
 | Gallop Crown | Horse | Runs with you |
 | Ember Sovereign | Blaze *(Nether)* | Rod Strike, Flame Barrage, Ring of Fire, Inferno Burst |
 | Gilded Swine | Piglin *(Nether)* | Gilded Jab, Snatch |
 | Thunderborn Swine | Zombified Piglin | Rusted Thrust. Only from a Pig Stand struck by lightning |
 
 Every punch lands with a MUDA-style burst of ghost fists. Stands never punch on their own unless you turn auto-assist
-on in the config. Max level is 15. XP comes from using abilities and from kills.
+on in the config. Max level is 10. XP comes from using abilities and from kills.
+
+## Stand highlights
+* **Aerosmith (Phantom, X)**: fly your Phantom remotely like creative flight (WASD, Space up, Shift down, Ctrl faster)
+  while your body stays put. Right click fires a stream of weak arrows; the gun overheats after 70 rounds (bar on the
+  right of the screen). F5 changes the camera distance. It can't leave a 64-block range.
+* **Soul Control (Axolotl, X)**: take over the mob you're looking at for 2 seconds (up to 10 at level 10). Walk it,
+  jump, attack with left click and use its own power with right click: creepers explode, Wardens Sonic Boom (you go
+  blind inside one), skeletons shoot, Blazes and Ghasts throw fire, Endermen teleport and more. If its body dies, your
+  soul snaps back.
+* **Sniff Out (Sniffer, Z)**: three slot reels roll random structures; pick one and the Sniffer finds the nearest one
+  you haven't visited and leaves a scent trail to it. Pass and wait 10 minutes; pass three times and you get a
+  search bar. Its nose weakens away from home: one reel in the Nether, and in the End it only flashes the way to an
+  End City for one second.
 
 ## Requiems
 | Requiem | From | How to earn it | Abilities |
@@ -92,7 +106,7 @@ Right click a **Steel Ball** to learn the Spin.
   * Missile + look down: the ball dives under the horse and launches it into the air.
 
 ## Commands (operators)
-`/stand set <type>`, `/stand level <1-15>`, `/stand clear`, `/stand aura on|off`, `/stand spin learn|forget`
+`/stand set <type>`, `/stand level <1-10>`, `/stand clear`, `/stand aura on|off`, `/stand spin learn|forget`
 
 ## Code layout
 ```

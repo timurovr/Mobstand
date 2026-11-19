@@ -63,6 +63,8 @@ public final class TimeStopFx {
         long el = sinceStop();
         boolean stopping = el >= 0 && el <= len + WAVE_OUT;
         com.mobstands.stand.TimeStop.clientStopped = stopping;
+        // Your own stopped time: keep this game's clock ticking too, so your Stand moves smoothly (see TimeStop.tick).
+        if (stopping && !mc.level.tickRateManager().runsNormally()) mc.level.setGameTime(mc.level.getGameTime() + 1L);
         Phase want;
         long mandom = now - d.mandomAt;
         if (mandom >= 0 && mandom < MANDOM_TOTAL && !stopping) {

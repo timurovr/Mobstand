@@ -272,6 +272,101 @@ public class StandEntity extends Entity {
             SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> HIDDEN =
             SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
+    /** Phantom: being piloted remotely, Aerosmith-style. */
+    private static final EntityDataAccessor<Boolean> PILOT =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
+
+    // ------------------------------------------------------------------ Phantom: Aerosmith piloting
+
+    /** How far from you the Phantom can fly while you pilot it. */
+    public static final double PILOT_RANGE = 64.0D;
+    /** Client (the pilot's game): current flight velocity. */
+    public Vec3 pilotVel = Vec3.ZERO;
+    /** Client: how far it's banked into a turn (degrees, smoothed). */
+    public float pilotBank;
+    private boolean wasPiloting;
+
+    public boolean isPiloting() {
+        return entityData.get(PILOT);
+    }
+
+    public void setPiloting(boolean on) {
+        entityData.set(PILOT, on);
+    }
+
+    private boolean localPilot() {
+        Player o = getOwnerPlayer();
+        return level().isClientSide && isPiloting() && o != null && o.isLocalPlayer();
+    }
+
+    /** The camera looks where you look (no lag), even though it sits on the Phantom. */
+    @Override
+    public float getViewYRot(float partial) {
+        return localPilot() ? pilotYaw : super.getViewYRot(partial);
+    }
+
+    @Override
+    public float getViewXRot(float partial) {
+        return localPilot() ? pilotPitch : super.getViewXRot(partial);
+    }
+
+    /** The pilot's keys this tick (set by the client's input handler): forward/back, left/right, up, down, sprint. */
+    public static float pilotForward, pilotStrafe;
+    /** Where the pilot is looking while flying (the mouse turns these; your body stays still). */
+    public static float pilotYaw, pilotPitch;
+    public static boolean pilotUp, pilotDown, pilotSprint;
+
+    /**
+     * The pilot's game flies the Phantom like creative flight: WASD moves it where you look, Space goes up,
+     * Shift goes down, Ctrl flies faster. It can't leave {@link #PILOT_RANGE}.
+     */
+    private void pilotClientTick(Player o) {
+        if (!wasPiloting) {
+            wasPiloting = true;
+            pilotVel = Vec3.ZERO;
+        }
+        float yaw = pilotYaw * Mth.DEG_TO_RAD;
+        Vec3 fwd = new Vec3(-Mth.sin(yaw), 0.0D, Mth.cos(yaw));
+        Vec3 left = new Vec3(Mth.cos(yaw), 0.0D, Mth.sin(yaw));
+        Vec3 wish = fwd.scale(pilotForward).add(left.scale(pilotStrafe));
+        if (wish.lengthSqr() > 1.0D) wish = wish.normalize();
+        double speed = pilotSprint ? 1.0D : 0.55D;
+        wish = wish.scale(speed).add(0.0D, (pilotUp ? 0.5D : 0.0D) - (pilotDown ? 0.5D : 0.0D), 0.0D);
+        // Snappy like creative flight: picks up speed fast and glides to a stop when you let go.
+        Vec3 v = pilotVel.scale(0.55D).add(wish.scale(0.45D));
+        // An invisible wall at the range: it can slide along the edge but never past it.
+        Vec3 home = o.position().add(0.0D, 1.0D, 0.0D);
+        Vec3 out = position().add(v).subtract(home);
+        if (out.length() > PILOT_RANGE) {
+            Vec3 n = out.normalize();
+            double push = v.dot(n);
+            if (push > 0.0D) v = v.subtract(n.scale(push)); // drop the part of the move heading outward
+        }
+        // Blocks: it can't fly through them - it glances off.
+        Vec3 from = position().add(0.0D, 0.3D, 0.0D);
+        Vec3 to = from.add(v);
+        net.minecraft.world.phys.BlockHitResult bh = level().clip(new net.minecraft.world.level.ClipContext(from, to,
+                net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, this));
+        if (bh.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+            Vec3 n = Vec3.atLowerCornerOf(bh.getDirection().getNormal());
+            Vec3 at = bh.getLocation().add(n.scale(0.35D));
+            setPos(at.x, at.y - 0.3D, at.z);
+            v = v.subtract(n.scale(v.dot(n) * 1.4D)).scale(0.5D);
+        } else {
+            setPos(to.x, to.y - 0.3D, to.z);
+        }
+        // (and if it's somehow past the wall - say you walked off - it's put right back on it)
+        Vec3 off = position().subtract(home);
+        if (off.length() > PILOT_RANGE) {
+            Vec3 at = home.add(off.normalize().scale(PILOT_RANGE));
+            setPos(at.x, at.y, at.z);
+        }
+        pilotVel = v;
+        setYRot(pilotYaw);
+        setXRot(pilotPitch);
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                new com.mobstands.network.PilotMovePayload(getX(), getY(), getZ(), getYRot(), getXRot()));
+    }
 
     // Client-side walk animation state
     public float limbPos;
@@ -329,6 +424,7 @@ public class StandEntity extends Entity {
         builder.define(HOLDS, new CompoundTag());
         builder.define(LIFT_START, -1);
         builder.define(LIFT_END, -1);
+        builder.define(PILOT, false);
     }
 
     // ------------------------------------------------------------------ accessors
@@ -880,7 +976,7 @@ public class StandEntity extends Entity {
 
     private boolean clientFollowing() {
         // The Slime roams on its own (server-driven), so the client never glues it to you.
-        return level().isClientSide && !isDismissing() && !entityData.get(LUNGING) && getOwnerPlayer() != null
+        return level().isClientSide && !isDismissing() && !isPiloting() && !entityData.get(LUNGING) && getOwnerPlayer() != null
                 && getStandType() != StandType.SLIME && getStandType() != StandType.PIG && (getStandType() != StandType.ALLAY || isLifting() || (!isRoaming() && mainHoldTarget() == null)) && !isFakeDead();
     }
 
@@ -1162,7 +1258,7 @@ public class StandEntity extends Entity {
     /** While the client is gluing the Stand to its owner, ignore the server's (slightly behind) positions. */
     @Override
     public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
-        if (clientFollowing()) return;
+        if (clientFollowing() || localPilot()) return; // (the pilot's own game flies it)
         StandType t = getStandType();
         if (t == StandType.PIG || t == StandType.ALLAY || t == StandType.SLIME || t == StandType.PIGLIN || t == StandType.PIGLIN_REQUIEM || isMobStand()) {
             // Smooth it out over a few ticks instead of snapping.
@@ -1269,6 +1365,8 @@ public class StandEntity extends Entity {
         Player owner = getOwnerPlayer();
         StandType followType = getStandType();
         if (followType != null && clientFollowing()) followOwner(owner, followType);
+        if (localPilot()) pilotClientTick(owner);
+        else wasPiloting = false;
         // Server-driven Stands (pig, roaming allay...) glide smoothly toward the latest server position.
         if (lerpSteps > 0 && !clientFollowing()) {
             double k = 1.0D / lerpSteps;
@@ -1486,6 +1584,14 @@ public class StandEntity extends Entity {
                 setPos(fakeDeadPos.x, fakeDeadPos.y, fakeDeadPos.z); // lies still where it fell
                 return;
             }
+        }
+        if (isPiloting()) {
+            // Flown by its pilot (positions come from their game). Too far, or they're asleep: it lands.
+            if (distanceTo(sp) > PILOT_RANGE + 40.0D || sp.isSleeping() || getStandType() != StandType.PHANTOM) setPiloting(false);
+            else com.mobstands.stand.StandManager.pilotCool(sp);
+            if (isPiloting() && tickCount % 4 == 0) ((ServerLevel) level()).sendParticles(net.minecraft.core.particles.ParticleTypes.SOUL,
+                    getX(), getY() + 0.3D, getZ(), 1, 0.2D, 0.05D, 0.2D, 0.0D);
+            return;
         }
         StandData data = StandManager.data(sp);
         StandType type = getStandType();

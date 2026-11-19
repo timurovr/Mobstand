@@ -58,7 +58,7 @@ public final class TimeStop {
 
     /** 4 seconds at level 1, growing to 9 seconds. */
     public static int durationFor(int level) {
-        return 80 + Math.min(100, Math.max(0, level - 1) * 6);
+        return 80 + Math.min(100, Math.max(0, level - 1) * 11);
     }
 
     public static boolean active(ServerPlayer p) {
@@ -159,8 +159,19 @@ public final class TimeStop {
         return false;
     }
 
+    /** Server tick when the game clock was last nudged on (once per tick, whichever level ticks first). */
+    private static int lastClockTick = -1;
+
     public static void tick(ServerLevel level) {
         if (ZONES.isEmpty()) return;
+        // The freeze stops the game clock too - and everything that runs on it (your Stand's floating and punching,
+        // ability cooldowns) would stall and stutter. Keep the clock going; the sun and moon stay put (the time of
+        // day isn't touched), and everything frozen stays frozen.
+        if (serverStopped && level.getServer().getTickCount() != lastClockTick && !level.tickRateManager().runsNormally()) {
+            lastClockTick = level.getServer().getTickCount();
+            var data = level.getServer().getWorldData().overworldData();
+            data.setGameTime(data.getGameTime() + 1L);
+        }
         Iterator<Zone> it = ZONES.iterator();
         while (it.hasNext()) {
             Zone z = it.next();

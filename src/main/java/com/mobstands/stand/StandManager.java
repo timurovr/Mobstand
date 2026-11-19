@@ -1045,6 +1045,102 @@ public final class StandManager {
 
     public static final double RECALL_RANGE = 64.0D;
 
+    /** Aerosmith: the piloted Phantom fires a blue bolt where you're looking (a few per second). */
+    private static final java.util.Map<java.util.UUID, Long> LAST_BOLT = new java.util.HashMap<>();
+    /**
+     * Aerosmith's gun overheats: 70 shots' worth of room. Each shot uses one; stop firing for a moment and it cools
+     * back up. Empty it and it overheats - locked until it has cooled all the way.
+     */
+    public static final int PILOT_AMMO = 70;
+    private static final java.util.Map<java.util.UUID, Integer> AMMO = new java.util.HashMap<>();
+    private static final java.util.Set<java.util.UUID> OVERHEATED = new java.util.HashSet<>();
+    public static final String AERO_TAG = "mobstands_aero";
+
+    /** Taking off with a cool gun. */
+    public static void pilotReload(ServerPlayer p) {
+        AMMO.put(p.getUUID(), PILOT_AMMO);
+        OVERHEATED.remove(p.getUUID());
+        sendHeat(p);
+    }
+
+    private static void sendHeat(ServerPlayer p) {
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p, new com.mobstands.network.PilotHeatPayload(
+                AMMO.getOrDefault(p.getUUID(), PILOT_AMMO), OVERHEATED.contains(p.getUUID())));
+    }
+
+    /** Every tick while piloting: the gun cools down once you've stopped firing for a moment. */
+    public static void pilotCool(ServerPlayer p) {
+        int ammo = AMMO.getOrDefault(p.getUUID(), PILOT_AMMO);
+        Long last = LAST_BOLT.get(p.getUUID());
+        long now = p.level().getGameTime();
+        boolean hot = OVERHEATED.contains(p.getUUID());
+        if (ammo >= PILOT_AMMO || (!hot && last != null && now - last < 15L)) return;
+        ammo = Math.min(PILOT_AMMO, ammo + (hot ? 1 : 2)); // an overheated gun cools slower
+        AMMO.put(p.getUUID(), ammo);
+        if (hot && ammo >= PILOT_AMMO) {
+            OVERHEATED.remove(p.getUUID());
+            p.serverLevel().playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.4F, 1.8F);
+        }
+        sendHeat(p);
+    }
+
+    public static void pilotShoot(ServerPlayer p) {
+        com.mobstands.entity.StandEntity s = getStand(p);
+        if (s == null || !s.isPiloting()) return;
+        long now = p.level().getGameTime();
+        Long last = LAST_BOLT.get(p.getUUID());
+        if (last != null && now - last < 3L && now >= last) return;
+        int ammo = AMMO.getOrDefault(p.getUUID(), PILOT_AMMO);
+        if (OVERHEATED.contains(p.getUUID())) {
+            if (now % 10L == 0L) p.serverLevel().playSound(null, s.getX(), s.getY(), s.getZ(), SoundEvents.DISPENSER_FAIL, SoundSource.PLAYERS, 0.6F, 1.6F);
+            return;
+        }
+        ammo--;
+        AMMO.put(p.getUUID(), ammo);
+        if (ammo <= 0) {
+            OVERHEATED.add(p.getUUID());
+            p.displayClientMessage(net.minecraft.network.chat.Component.literal("Overheated!").withStyle(st -> st.withColor(0xFF5533).withBold(true)), true);
+            p.serverLevel().playSound(null, s.getX(), s.getY(), s.getZ(), SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.8F, 0.8F);
+        }
+        sendHeat(p);
+        LAST_BOLT.put(p.getUUID(), now);
+        // Aim where the Phantom is facing (your game sends its heading with every move). Your body isn't the camera
+        // while you fly, so the server never hears where you're looking.
+        Vec3 dir = Vec3.directionFromRotation(s.getXRot(), s.getYRot());
+        Vec3 from = s.position().add(0.0D, 0.3D, 0.0D).add(dir.scale(1.2D));
+        // Real arrows with the Turtle Master tipped-arrow look (its coloured swirl), but no potion effect at all.
+        net.minecraft.world.item.ItemStack look = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.TIPPED_ARROW);
+        int color = net.minecraft.world.item.alchemy.PotionContents.getColor(net.minecraft.world.item.alchemy.Potions.TURTLE_MASTER);
+        look.set(net.minecraft.core.component.DataComponents.POTION_CONTENTS,
+                new net.minecraft.world.item.alchemy.PotionContents(java.util.Optional.empty(), java.util.Optional.of(color), java.util.List.of()));
+        net.minecraft.world.entity.projectile.Arrow arrow = new net.minecraft.world.entity.projectile.Arrow(p.serverLevel(), from.x, from.y, from.z, look, null);
+        arrow.setOwner(p);
+        arrow.pickup = net.minecraft.world.entity.projectile.AbstractArrow.Pickup.CREATIVE_ONLY;
+        arrow.setBaseDamage(0.15D); // a nick each - half a heart - but a hundred of them, and each one lands
+        arrow.addTag(AERO_TAG);
+        arrow.shoot(dir.x, dir.y, dir.z, 3.2F, 1.5F);
+        p.serverLevel().addFreshEntity(arrow);
+        p.serverLevel().playSound(null, from.x, from.y, from.z, SoundEvents.ARROW_SHOOT, SoundSource.PLAYERS, 0.6F, 1.6F + p.getRandom().nextFloat() * 0.3F);
+    }
+
+    /** Aerosmith: bring the Phantom back. */
+    public static void pilotLand(ServerPlayer p) {
+        com.mobstands.entity.StandEntity s = getStand(p);
+        if (s == null || !s.isPiloting()) return;
+        s.setPiloting(false);
+        p.serverLevel().playSound(null, s.getX(), s.getY(), s.getZ(), SoundEvents.PHANTOM_SWOOP, SoundSource.PLAYERS, 1.0F, 1.2F);
+    }
+
+    /** Aerosmith: where the pilot's game says the Phantom is. */
+    public static void pilotMove(ServerPlayer p, double x, double y, double z, float yRot, float xRot) {
+        com.mobstands.entity.StandEntity s = getStand(p);
+        if (s == null || !s.isPiloting()) return;
+        if (p.distanceToSqr(x, y, z) > (com.mobstands.entity.StandEntity.PILOT_RANGE + 40.0D) * (com.mobstands.entity.StandEntity.PILOT_RANGE + 40.0D)) return;
+        s.setPos(x, y, z);
+        s.setYRot(yRot);
+        s.setXRot(xRot);
+    }
+
     private static void launchSpin(ServerPlayer p, net.minecraft.world.item.ItemStack one, float power, int charge, boolean offHand, boolean spread) {
         com.mobstands.entity.SpinItemEntity si = new com.mobstands.entity.SpinItemEntity(com.mobstands.registry.ModEntities.SPIN_ITEM.get(), p.level());
         si.setup(p, one, power);
@@ -1900,6 +1996,9 @@ public final class StandManager {
     /** @param slot 0 = basic, 1 = Z, 2 = X, 3 = C */
     public static void use(ServerPlayer p, int slot) {
         if (slot < 0 || slot >= StandData.SLOTS) return;
+        // Piloting the Phantom: no punching or other moves - only the key that lands it.
+        StandEntity flying = getStand(p);
+        if (flying != null && flying.isPiloting() && slot != 2) return;
         StandData d = data(p);
         StandType type = d.getType();
         if (type == null) {

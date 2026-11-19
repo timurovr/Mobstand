@@ -92,7 +92,8 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         if (dummy == null) return;
 
         float bodyYaw = Mth.rotLerp(partial, stand.yRotO, stand.getYRot());
-        float pitch = Mth.clamp(Mth.lerp(partial, stand.xRotO, stand.getXRot()), -35.0F, 35.0F);
+        // (Piloted: the whole body pitches instead - the head stays put on the body.)
+        float pitch = stand.isPiloting() ? 0.0F : Mth.clamp(Mth.lerp(partial, stand.xRotO, stand.getXRot()), -35.0F, 35.0F);
         float age = stand.tickCount + partial;
         float limbAmount = Mth.lerp(partial, stand.limbSpeedO, stand.limbSpeed);
         float limbSwing = stand.limbPos - stand.limbSpeed * (1.0F - partial);
@@ -113,7 +114,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             renderAllayWorld(stand, vis, partial, ps, buffers, fIn * fIn * (3.0F - 2.0F * fIn) * (1.0F - fOut * fOut * (3.0F - 2.0F * fOut)));
         }
         ps.pushPose();
-        firstPersonShift(stand, type, progress, partial, ps);
+        if (!stand.isPiloting()) firstPersonShift(stand, type, progress, partial, ps);
         ps.mulPose(Axis.YP.rotationDegrees(180.0F - bodyYaw));
         float bob = Mth.sin(age * 0.1F) * 0.04F;
         float lunge = slot == 0 ? pulse * 0.35F : 0.0F;
@@ -153,7 +154,14 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             }
             ps.mulPose(Axis.XP.rotationDegrees(90.0F * cling));
         }
-        if (!requiemStill) {
+        if (stand.isPiloting()) {
+            // Flying level, banking into turns: turn left and it tips its left wing down, turn right and the right.
+            float turnRate = Mth.wrapDegrees(stand.getYRot() - stand.yRotO);
+            stand.pilotBank += (Mth.clamp(-turnRate * 3.0F, -40.0F, 40.0F) - stand.pilotBank) * 0.15F;
+            ps.mulPose(Axis.ZP.rotationDegrees(stand.pilotBank));
+            // Nose follows your aim: look down and it dives head-first, look up and it climbs.
+            ps.mulPose(Axis.XP.rotationDegrees(-Mth.clamp(Mth.lerp(partial, stand.xRotO, stand.getXRot()), -60.0F, 60.0F)));
+        } else if (!requiemStill) {
             ps.mulPose(Axis.YP.rotationDegrees(-vis.turn * side * stance));
             ps.mulPose(Axis.XP.rotationDegrees(vis.lean * stance));
             ps.mulPose(Axis.ZP.rotationDegrees((vis.tilt * side + Mth.sin(age * 0.05F) * 1.5F) * stance));
@@ -511,7 +519,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
     private static void armGlow(PoseStack ps, MultiBufferSource buffers, StandVisual.ArmPiece arm, float alpha, float scale, int rgb) {
         if (alpha <= 0.01F) return;
         int color = ((int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F) << 24) | (rgb & 0xFFFFFF);
-        drawArm(ps, buffers.getBuffer(RenderType.lightning()), arm, LightTexture.FULL_BRIGHT, color, scale);
+        drawArm(ps, buffers.getBuffer(ModRenderTypes.glow()), arm, LightTexture.FULL_BRIGHT, color, scale);
     }
 
     /**
@@ -521,7 +529,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
      */
     private static void clockGlow(PoseStack ps, MultiBufferSource buffers, float age) {
         org.joml.Matrix4f m = ps.last().pose();
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         boolean stopped = TimeStopFx.frozen();
         float pulse = 0.5F + 0.5F * Mth.sin(age * (stopped ? 0.35F : 0.12F));
         int r = 255, g = 214, b = 74; // gold
@@ -555,7 +563,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
     /** GER's totem: a soft gold glow behind it and a slowly turning eight-pointed star of light, gently pulsing. */
     private static void totemStar(PoseStack ps, MultiBufferSource buffers, float age, float fade) {
         org.joml.Matrix4f m = ps.last().pose();
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         float pulse = 0.5F + 0.5F * Mth.sin(age * 0.11F);
         fade *= daylightDim();
         int r = 255, g = 214, b = 74;
@@ -682,7 +690,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         ps.translate(0.0F, -centerY, 0.0F);
         StandVisual vis = MODEL_OWNERS.get(model);
         if (vis != null) vis.hideForGlow(true);
-        model.renderToBuffer(ps, buffers.getBuffer(RenderType.lightning()), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+        model.renderToBuffer(ps, buffers.getBuffer(ModRenderTypes.glow()), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
                 ((int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F) << 24) | (rgb & 0xFFFFFF));
         if (vis != null) vis.hideForGlow(false);
         ps.popPose();
@@ -762,7 +770,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
     /** One thin crescent blade (tapered at both ends), drawn double-sided and fully bright. */
     private static void drawCrescent(PoseStack ps, MultiBufferSource buffers, float radius, float width, float sweep, int rgb, float alpha) {
         if (alpha <= 0.01F || sweep <= 0.01F) return;
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         org.joml.Matrix4f m = ps.last().pose();
         int r = rgb >> 16 & 255, g = rgb >> 8 & 255, b = rgb & 255, a = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
         final int segs = 14;

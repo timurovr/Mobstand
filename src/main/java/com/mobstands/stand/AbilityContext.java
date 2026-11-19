@@ -46,7 +46,7 @@ public final class AbilityContext {
     // ------------------------------------------------------------------ power
 
     public double power() {
-        return type.rarity().power() * (1.0D + type.powerPerLevel() * (standLevel - 1)) * StandConfig.DAMAGE_MULTIPLIER.get();
+        return type.rarity().power() * (1.0D + type.powerPerLevel() * (standLevel - 1) * 14.0D / 9.0D) * StandConfig.DAMAGE_MULTIPLIER.get();
     }
 
     public float dmg(double base) {

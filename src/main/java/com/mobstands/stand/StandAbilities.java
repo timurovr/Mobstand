@@ -386,7 +386,7 @@ public final class StandAbilities {
                     return true;
                 }),
 
-                ab("Void Collapse", "Rip a hole in space: enemies are dragged to your aim point, damaged and weakened.", 12, 40, c -> {
+                ab("Void Collapse", "Rip a hole in space: enemies are dragged to your aim point, damaged and weakened.", 10, 40, c -> {
                     Vec3 center = c.aimPoint(12.0D);
                     c.sound(SoundEvents.ENDERMAN_SCREAM, 1.4F, 0.7F);
                     c.fx(ParticleTypes.REVERSE_PORTAL, center, 80, 1.5D, 0.3D);
@@ -425,6 +425,10 @@ public final class StandAbilities {
                         dest = c.blinkDestination(10.0D);
                     }
                     if (dest == null) return false;
+                    // Where you were: a deep, swallowed whoosh as you vanish.
+                    Vec3 was = c.owner.position();
+                    c.level.playSound(null, was.x, was.y, was.z, SoundEvents.ENDERMAN_TELEPORT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 0.45F);
+                    c.level.playSound(null, was.x, was.y, was.z, SoundEvents.WARDEN_SONIC_CHARGE, net.minecraft.sounds.SoundSource.PLAYERS, 0.5F, 2.0F);
                     c.owner.teleportTo(dest.x, dest.y, dest.z);
                     if (t != null) {
                         Vec3 look = t.position().subtract(dest);
@@ -432,9 +436,18 @@ public final class StandAbilities {
                         c.owner.connection.teleport(dest.x, dest.y, dest.z, yaw, c.owner.getXRot());
                     }
                     c.owner.fallDistance = 0.0F;
-                    c.sound(SoundEvents.ENDERMAN_TELEPORT, 0.8F, 1.6F);
-                    c.sound(SoundEvents.NOTE_BLOCK_HAT.value(), 1.0F, 1.8F);
-                    c.sound(SoundEvents.BELL_BLOCK, 1.0F, 1.4F);
+                    // Where you appear - right behind them: a deep bell toll, a distorted Enderman shriek and a
+                    // heartbeat, then the clock ticks on (tick... tock) and something rumbles in the dark.
+                    final Vec3 at = dest;
+                    java.util.function.BiConsumer<net.minecraft.sounds.SoundEvent, float[]> here = (snd, vp) ->
+                            c.level.playSound(null, at.x, at.y, at.z, snd, net.minecraft.sounds.SoundSource.PLAYERS, vp[0], vp[1]);
+                    here.accept(SoundEvents.BELL_BLOCK, new float[]{1.3F, 0.5F});
+                    here.accept(SoundEvents.ENDERMAN_SCREAM, new float[]{0.55F, 0.6F});
+                    here.accept(SoundEvents.WARDEN_HEARTBEAT, new float[]{1.2F, 0.7F});
+                    here.accept(SoundEvents.ENDERMAN_TELEPORT, new float[]{0.7F, 0.7F});
+                    c.later(4, () -> c.sound(SoundEvents.NOTE_BLOCK_BASEDRUM.value(), 0.9F, 0.6F));
+                    c.later(9, () -> c.sound(SoundEvents.NOTE_BLOCK_HAT.value(), 0.8F, 0.6F));
+                    c.later(12, () -> c.sound(SoundEvents.AMBIENT_CAVE.value(), 0.7F, 0.6F));
                     // The same inverted-colour flash as Time Stop, just for a split second.
                     c.data.timeSkipAt = c.level.getGameTime();
                     StandManager.sync(c.owner);
@@ -593,7 +606,7 @@ public final class StandAbilities {
                     return true;
                 }),
 
-                ab("Sonic Devastation", "Two shockwaves of sound tear through everything within 11 blocks.", 14, 55, c -> {
+                ab("Sonic Devastation", "Two shockwaves of sound tear through everything within 11 blocks.", 10, 55, c -> {
                     c.sound(SoundEvents.WARDEN_ROAR, 1.6F, 0.9F);
                     for (int wave = 0; wave < 2; wave++) {
                         final int w = wave;
@@ -635,14 +648,19 @@ public final class StandAbilities {
                     return true;
                 }),
 
-                ab("Wing Lift", "Soar into the sky and glide gently back down.", 5, 12, c -> {
-                    Vec3 look = c.flatLook();
-                    c.owner.setDeltaMovement(look.x * 0.5D, 1.05D, look.z * 0.5D);
-                    c.owner.hurtMarked = true;
-                    c.owner.fallDistance = 0.0F;
-                    c.owner.addEffect(new net.minecraft.world.effect.MobEffectInstance(MobEffects.SLOW_FALLING, 280, 0));
-                    c.sound(SoundEvents.PHANTOM_FLAP, 1.5F, 0.9F);
-                    c.fx(ParticleTypes.SOUL_FIRE_FLAME, c.owner.position().add(0.0D, 0.5D, 0.0D), 30, 0.5D, 0.1D);
+                ab("Aerosmith", "Pilot your Phantom from afar like a fighter plane. You stay where you are and see through its eyes. "
+                        + "Fly it like creative mode: WASD to move, Space up, Shift down, Ctrl to go faster. Right click (hold) to fire arrows. "
+                        + "Press again to bring it back. It can fly up to 64 blocks from you.", 5, 1, c -> {
+                    boolean on = !c.stand.isPiloting();
+                    if (on) {
+                        Vec3 at = c.owner.getEyePosition().add(c.owner.getLookAngle().scale(1.5D));
+                        c.stand.setPos(at.x, at.y - 0.3D, at.z);
+                        c.owner.displayClientMessage(net.minecraft.network.chat.Component.literal("Aerosmith! WASD + Space/Shift to fly, right click to fire, press again to land.")
+                                .withStyle(s -> s.withColor(0x6F8CFF)), true);
+                    }
+                    c.stand.setPiloting(on);
+                    if (on) StandManager.pilotReload(c.owner);
+                    c.sound(on ? SoundEvents.PHANTOM_FLAP : SoundEvents.PHANTOM_SWOOP, 1.0F, on ? 0.8F : 1.2F);
                     return true;
                 }),
 
@@ -874,6 +892,16 @@ public final class StandAbilities {
     public static final float OINK_CHANCE = 0.3F;
     public static final int OINK_TICKS = 120;
 
+    public static Ability[] sniffer() {
+        return new Ability[]{
+                ab("Snout Bump", "A heavy shove with its big snout.", 1, 0.9, c ->
+                        melee(c, 3.0D, 1.4D, 0.3D, t -> c.sound(SoundEvents.SNIFFER_STEP, 1.0F, 0.8F))),
+                ab("Sniff Out", "A gamble: three slots roll three random structures. Pick one and your Sniffer finds the nearest. "
+                        + "Pass, and the next roll is in 10 minutes. Pass three times and its nose is trained: "
+                        + "the next sniff lets you search for anything.", 1, 600, c -> com.mobstands.stand.Sniff.use(c.owner)),
+                Ability.none(), Ability.none()};
+    }
+
     public static Ability[] pig() {
         return new Ability[]{
                 Ability.none(),
@@ -991,8 +1019,10 @@ public final class StandAbilities {
                         1, AXOLOTL_DEAD_TICKS, c -> false),
                 ab("Soul Swap", "Look at a mob and trade lives with it: your health and its health swap places (as a share of each one's maximum). Nearly dead against a healthy mob? Now it's the one nearly dead. Swap with something worse off than you and it backfires. Doesn't work on bosses.", 3, 30, c ->
                         AxolotlPowers.soulSwap(c)),
-                ab("Bubble Nursery", "Seal the mob you're looking at in a floating bubble of water: it hangs helpless in the air, slowly drowning, for 6 seconds - then the bubble pops and it drops.", 6, 40, c ->
-                        AxolotlPowers.bubble(c)),
+                ab("Soul Control", "Slip your soul into the mob you're looking at and take over its body: see through its eyes, "
+                        + "walk it with WASD, jump with Space, attack with left click, and right click to use its own power: Creepers explode, Wardens Sonic Boom (in darkness), Skeletons shoot, Blazes throw fire, Endermen teleport and more. Fliers go up with Space and down with Shift. Walk it off a cliff or into lava - when its body dies, "
+                        + "your soul snaps back into yours. You can stay 2 seconds at first, 2 more each level, up to 10 seconds at level 10. Press again to come back any time. Your own body stands there defenceless meanwhile.", 6, 40, c ->
+                        SoulControl.use(c)),
 ab("Neoteny", "Like a watch wound back: while your Axolotl is out, the world around you is quietly remembered. Use it and the last 6 seconds are undone for everything within 40 blocks - every mob and player (you too) goes back where it was with the health it had, mobs that died come back, drops and arrows vanish, broken, placed or blown-up blocks return. Only you remember it happened.", 10, 45, c ->
                         Mandom.rewind(c.owner))
         };

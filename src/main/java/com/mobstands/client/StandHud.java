@@ -48,6 +48,7 @@ public final class StandHud {
             case HORSE -> new Palette(0xC9925A, 0x2E1E10);      // chestnut brown
             case ALLAY -> new Palette(0x7FE6FF, 0x0E2A3A);      // allay sky blue
             case PIG -> new Palette(0xF4A8A8, 0x3A1A1A);        // pig pink
+            case SNIFFER -> new Palette(0x5FD18A, 0x3A1E14);    // mossy green on sniffer red-brown
             case PIGLIN -> new Palette(0xF2C94C, 0x3A2410);     // piglin gold
             case ZOMBIFIED_PIGLIN -> new Palette(0x8DBE6A, 0x2A1E1E); // rotten green
         };
@@ -98,9 +99,9 @@ public final class StandHud {
         int base = pal.base();
         float v = visibility;
 
-        // Wide enough for the name plus "Requiem"/"Lv 15", and for every ability with its cooldown timer.
+        // Wide enough for the name plus "Requiem"/"Lv 10", and for every ability with its cooldown timer.
         int w = 138;
-        w = Math.max(w, mc.font.width(t.standName()) + mc.font.width(t.requiem() ? "Requiem" : "Lv 15") + 12);
+        w = Math.max(w, mc.font.width(t.standName()) + mc.font.width(t.requiem() ? "Requiem" : "Lv 10") + 12);
         for (int slot = 0; slot < StandData.SLOTS; slot++) {
             Ability ab = t.ability(slot);
             if (ab.isEmpty()) continue;
@@ -153,6 +154,10 @@ public final class StandHud {
             }
             int color = locked ? 0x707070 : (remaining > 0 ? 0xA8A8A8 : ready);
             String label = key + " " + a.name();
+            if (slot == 0 && PilotClient.active()) {
+                label = key + " Shoot"; // piloting the Phantom: right click fires instead of punching
+                remaining = 0;
+            }
             if (locked) label += "  Lv" + a.unlockLevel();
             g.drawString(mc.font, label, x + 2, ry + 1, argb((int) (255 * v), color), false);
             if (remaining > 0) {

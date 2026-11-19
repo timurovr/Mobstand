@@ -69,8 +69,10 @@ public final class RequiemTrials {
         if (p.tickCount % 20 != 0) return;
         StandData d = StandManager.data(p);
         boolean end = StandManager.reached(p, StandType.Pool.END);
-        if (end != d.reachedEnd) {
+        boolean nether = StandManager.reached(p, StandType.Pool.NETHER);
+        if (end != d.reachedEnd || nether != d.reachedNether) {
             d.reachedEnd = end;
+            d.reachedNether = nether;
             StandManager.sync(p);
         }
         if (!open(d)) return;

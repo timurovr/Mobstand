@@ -86,7 +86,7 @@ public final class SpinFx {
         float k = stay ? 0.5F : el < 30.0F ? 1.0F : 1.0F - (el - 30.0F) / 20.0F;
         k = Math.min(k, el / 3.0F); // and snap in quickly at the start
         if (k < 0.03F) return;
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         float a = angle(el) * 1.4F;
         ps.pushPose();
         ps.mulPose(Axis.YP.rotationDegrees(a));
@@ -103,7 +103,7 @@ public final class SpinFx {
 
     /** A soft yellow glow around a spinning item on the floor: stacked golden rings whirling around it. */
     public static void drawGlow(PoseStack ps, MultiBufferSource buffers, float el, float r, float alpha) {
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         ps.pushPose();
         ps.mulPose(Axis.YP.rotationDegrees(el * 23.0F));
         Matrix4f m = ps.last().pose();
@@ -116,7 +116,7 @@ public final class SpinFx {
 
     /** A thin pulsing golden circle on the ground marking the area the floor spin covers. */
     public static void drawAreaRing(PoseStack ps, MultiBufferSource buffers, float radius, float el, float alpha) {
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         ps.pushPose();
         ps.mulPose(Axis.YP.rotationDegrees(el * 4.0F));
         Matrix4f m = ps.last().pose();
@@ -128,7 +128,7 @@ public final class SpinFx {
 
     /** A thin pulsing golden square on the ground marking the 8x8 area the floor spin covers. */
     public static void drawAreaSquare(PoseStack ps, MultiBufferSource buffers, float half, float alpha) {
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         Matrix4f m = ps.last().pose();
         int a = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
         float w = 0.06F;

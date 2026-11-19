@@ -61,12 +61,14 @@ public final class StandEvents {
             StandManager.tick(p);
             com.mobstands.stand.DreamWalk.tick(p);
             com.mobstands.stand.RequiemTrials.tick(p);
+            com.mobstands.stand.Sniff.tick(p);
         }
     }
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         TickScheduler.tick();
+        com.mobstands.stand.SoulControl.tick(event.getServer());
         for (net.minecraft.server.level.ServerLevel l : event.getServer().getAllLevels()) {
             StandManager.twirlTick(l);
             com.mobstands.stand.TimeStop.tick(l);
@@ -106,10 +108,29 @@ public final class StandEvents {
                 net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 0.5F);
     }
 
+    /**
+     * Aerosmith's arrows: every one of them lands (no invulnerability window between hits), and they vanish when
+     * they hit the ground instead of littering it.
+     */
+    @SubscribeEvent
+    public static void onProjectileImpact(net.neoforged.neoforge.event.entity.ProjectileImpactEvent event) {
+        if (event.getProjectile().level().isClientSide || !event.getProjectile().getTags().contains(StandManager.AERO_TAG)) return;
+        if (event.getRayTraceResult() instanceof net.minecraft.world.phys.EntityHitResult eh) {
+            eh.getEntity().invulnerableTime = 0;
+        } else {
+            var pr = event.getProjectile();
+            ((net.minecraft.server.level.ServerLevel) pr.level()).sendParticles(net.minecraft.core.particles.ParticleTypes.CRIT,
+                    pr.getX(), pr.getY(), pr.getZ(), 2, 0.05D, 0.05D, 0.05D, 0.05D);
+            pr.discard();
+            event.setCanceled(true);
+        }
+    }
+
     /** Before the world saves: any Steel Balls spinning under a horse go back to their owners. */
     @SubscribeEvent
     public static void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
         com.mobstands.stand.HorseSpin.shutdown();
+        com.mobstands.stand.SoulControl.shutdown();
     }
 
     @SubscribeEvent

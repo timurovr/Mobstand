@@ -104,7 +104,7 @@ public final class LoveTrainFx {
         float partial = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         PoseStack ps = event.getPoseStack();
         MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
-        VertexConsumer vc = buffers.getBuffer(RenderType.lightning());
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
         ps.pushPose();
         Matrix4f m = ps.last().pose();
         for (Barrier b : BARRIERS) {
@@ -136,7 +136,7 @@ public final class LoveTrainFx {
             }
         }
         ps.popPose();
-        buffers.endBatch(RenderType.lightning());
+        buffers.endBatch(ModRenderTypes.glow());
     }
 
     /** One vertical camera-facing strip from {@code y0} to {@code y1} above the ground: bright at the bottom, fading up. */

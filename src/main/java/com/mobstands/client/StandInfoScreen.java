@@ -62,6 +62,8 @@ public class StandInfoScreen extends Screen {
         if (t == null) {
             g.drawCenteredString(font, "You have no Stand.", width / 2, height / 2 - 10, 0xFFFFFF);
             g.drawCenteredString(font, "Use an Echoing Arrow to awaken one.", width / 2, height / 2 + 4, 0xAAAAAA);
+            Component pool = poolLine(d);
+            g.drawString(font, pool, width / 2 - font.width(pool) / 2, height / 2 + 22, 0xFFFFFF, false);
             return;
         }
 
@@ -95,6 +97,10 @@ public class StandInfoScreen extends Screen {
         String xpText = t.requiem() ? "REQUIEM" : max ? "MAX LEVEL" : d.getXp() + " / " + d.xpForNext() + " XP";
         g.drawString(font, xpText, x + tw / 2 - font.width(xpText) / 2, y, 0xFFFFFF, true);
         y += 16;
+
+        // Which Stands an Echoing Arrow can roll for you right now.
+        g.drawString(font, poolLine(d), x, y, 0xFFFFFF, false);
+        y += 14;
 
         g.drawString(font, "Abilities", x, y, 0xFFD700, false);
         y += 12;
@@ -163,5 +169,20 @@ public class StandInfoScreen extends Screen {
         y += 14;
         contentHeight = y - top + 20;
         g.disableScissor();
+    }
+
+    /** "Arrow pool: ✔ Overworld  ✔ Nether  ✖ End" - lit up as you reach each part of the world. */
+    private static Component poolLine(com.mobstands.stand.StandData d) {
+        net.minecraft.network.chat.MutableComponent c = Component.literal("Arrow pool:  ").withStyle(s -> s.withColor(0xFFD700));
+        c.append(part("Overworld", true, 0x7EDB6E));
+        c.append(Component.literal("   "));
+        c.append(part("Nether", d.reachedNether, 0xFF7A3A));
+        c.append(Component.literal("   "));
+        c.append(part("End", d.reachedEnd, 0xD9A8FF));
+        return c;
+    }
+
+    private static Component part(String name, boolean open, int color) {
+        return Component.literal((open ? "\u2714 " : "\u2716 ") + name).withStyle(s -> s.withColor(open ? color : 0x666666));
     }
 }

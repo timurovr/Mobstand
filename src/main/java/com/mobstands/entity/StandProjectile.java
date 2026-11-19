@@ -41,7 +41,9 @@ public class StandProjectile extends Entity {
         /** The Double Shot bonus arrow: leaves a glowing white trail and flashes on impact. */
         GLOW_ARROW(ParticleTypes.END_ROD, 2.4D, 0.012D, 60, 0),
         WEB(ParticleTypes.ITEM_COBWEB, 1.5D, 0.01D, 50, 0),
-        SLIME(ParticleTypes.ITEM_SLIME, 1.1D, 0.03D, 80, 3);
+        SLIME(ParticleTypes.ITEM_SLIME, 1.1D, 0.03D, 80, 3),
+        /** Aerosmith-style machine-gun bolts from the piloted Phantom: fast, straight, glowing blue. */
+        AERO_BOLT(new net.minecraft.core.particles.DustParticleOptions(new org.joml.Vector3f(0.35F, 0.65F, 1.0F), 1.3F), 3.2D, 0.0D, 22, 0);
 
         public final ParticleOptions trail;
         public final double speed;

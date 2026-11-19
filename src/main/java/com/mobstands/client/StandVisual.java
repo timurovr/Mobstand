@@ -232,6 +232,11 @@ final class StandVisual {
                 outerModel = new SlimeModel(ctx.bakeLayer(ModelLayers.SLIME_OUTER));
                 texture = tex("textures/entity/slime/slime.png");
             }
+            case SNIFFER -> {
+                root = ctx.bakeLayer(ModelLayers.SNIFFER);
+                main = new net.minecraft.client.model.SnifferModel<>(root);
+                texture = tex("textures/entity/sniffer/sniffer.png");
+            }
             case MINECART -> {
                 root = ctx.bakeLayer(ModelLayers.MINECART);
                 main = new net.minecraft.client.model.MinecartModel<>(root);
@@ -469,6 +474,7 @@ final class StandVisual {
             return;
         }
         if (type == StandType.SKELETON || type == StandType.WARDEN) return; // bow pose / nothing else to do
+        if (type == StandType.ENDER_WORLD && slot == 3) return; // Time Stop: it just stands there - no gesture
         float s = Mth.sin(progress * Mth.PI);
         boolean bothArms = slot > 0 || type == StandType.IRON_GOLEM;
         rArm.xRot = -1.7F * s - (bothArms ? 1.0F * s : 0.0F);
@@ -628,6 +634,9 @@ final class StandVisual {
     /** Phantom attacks: wings wind up high, then whip down hard as it strikes; Wing Lift beats fast; the Swarm spreads them wide. */
     private void phantomAttack(float progress, int slot, float age) {
         ModelPart head = part("body", "head");
+        // The vanilla model never resets the head, so start from its rest pose every frame (otherwise each frame's
+        // nod piles on top of the last and the head spins off).
+        if (head != null) head.resetPose();
         if (slot == 2) { // Wing Lift: big, fast wingbeats
             phantomWings(age, 0.55F, 0.75F, 0.0F);
             return;

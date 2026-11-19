@@ -70,7 +70,7 @@ public final class HorseBalls {
         double speed = Math.sqrt(v.x * v.x + v.z * v.z);
         float len = (float) Mth.clamp(speed * 9.0D, 0.0D, 3.2D);
         if (len < 0.25F) return;
-        com.mojang.blaze3d.vertex.VertexConsumer vc = buf.getBuffer(net.minecraft.client.renderer.RenderType.lightning());
+        com.mojang.blaze3d.vertex.VertexConsumer vc = buf.getBuffer(com.mobstands.client.ModRenderTypes.glow());
         org.joml.Matrix4f m = ps.last().pose();
         // The same kind of wind as the Spin's rings: flat, tapered white lines, faded to nothing at the tail.
         // Six of them, each popping up at a random spot along the horse, living a moment, then somewhere else.

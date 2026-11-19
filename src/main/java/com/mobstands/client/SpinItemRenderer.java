@@ -69,7 +69,7 @@ public class SpinItemRenderer extends EntityRenderer<SpinItemEntity> {
         pts.add(here);
         pts.addAll(e.trail);
         net.minecraft.world.phys.Vec3 cam = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
-        com.mojang.blaze3d.vertex.VertexConsumer vc = buffers.getBuffer(net.minecraft.client.renderer.RenderType.lightning());
+        com.mojang.blaze3d.vertex.VertexConsumer vc = buffers.getBuffer(com.mobstands.client.ModRenderTypes.glow());
         org.joml.Matrix4f m = ps.last().pose();
         int n = pts.size();
         for (int pass = 0; pass < 2; pass++) {

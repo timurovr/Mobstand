@@ -11,7 +11,7 @@ import java.util.UUID;
  * and mirrored to the client through {@code SyncStandPayload}.
  */
 public class StandData implements INBTSerializable<CompoundTag> {
-    public static final int MAX_LEVEL = 15;
+    public static final int MAX_LEVEL = 10;
     /** The Spin technique levels up to 10 (10 = master). */
     public static final int SPIN_MAX_LEVEL = 10;
     public static final int SLOTS = 5; // 0 = basic, 1 = Z, 2 = X, 3 = C, 4 = V (only some Stands have a 5th)
@@ -109,6 +109,12 @@ public class StandData implements INBTSerializable<CompoundTag> {
     /** Requiem Trials: steps done (bit flags) and a counter (see RequiemTrials). Whether you've reached the End. */
     public int trialFlags, trialCount;
     public boolean reachedEnd;
+    /** Has been to the Nether (Nether Stands can be rolled). */
+    public boolean reachedNether;
+    /** Sniffer: Sniff Out rolls passed on in a row (3 = the next one is a search). */
+    public int sniffMisses;
+    /** Sniffer: structures you've been led to and reached ("dimension|x|z"); it won't lead you back to them. */
+    public final java.util.List<String> sniffVisited = new java.util.ArrayList<>();
     /** Gilded Silence: stolen sounds (entity type ids, or "thunder") and which one is ready. */
     public final java.util.List<String> stolenSounds = new java.util.ArrayList<>();
     public int soundSel;
@@ -236,6 +242,11 @@ public class StandData implements INBTSerializable<CompoundTag> {
         tag.putInt("TrialFlags", trialFlags);
         tag.putInt("TrialCount", trialCount);
         tag.putBoolean("ReachedEnd", reachedEnd);
+        tag.putBoolean("ReachedNether", reachedNether);
+        tag.putInt("SniffMisses", sniffMisses);
+        net.minecraft.nbt.ListTag sv = new net.minecraft.nbt.ListTag();
+        for (String v : sniffVisited) sv.add(net.minecraft.nbt.StringTag.valueOf(v));
+        tag.put("SniffVisited", sv);
         tag.putString("Sounds", String.join(",", stolenSounds));
         tag.putInt("SoundSel", soundSel);
         return tag;
@@ -275,6 +286,11 @@ public class StandData implements INBTSerializable<CompoundTag> {
         trialFlags = tag.getInt("TrialFlags");
         trialCount = tag.getInt("TrialCount");
         reachedEnd = tag.getBoolean("ReachedEnd");
+        reachedNether = tag.getBoolean("ReachedNether");
+        sniffMisses = tag.getInt("SniffMisses");
+        sniffVisited.clear();
+        net.minecraft.nbt.ListTag sv = tag.getList("SniffVisited", net.minecraft.nbt.Tag.TAG_STRING);
+        for (int i = 0; i < sv.size(); i++) sniffVisited.add(sv.getString(i));
         stolenSounds.clear();
         for (String sId : tag.getString("Sounds").split(",")) if (!sId.isBlank()) stolenSounds.add(sId);
         soundSel = tag.getInt("SoundSel");

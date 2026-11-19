@@ -105,6 +105,12 @@ public enum StandType {
             StandAbilities.enderWorld(),
             new Passive(4, "Fleet Step", "Permanent Speed I while your Stand is out.")),
 
+    // Sniffs out structures - a gamble every time.
+    SNIFFER("sniffer", "Ancient Nose", "Sniffer", StandRarity.RARE, 0x5FD18A, EntityType.SNIFFER,
+            ParticleTypes.COMPOSTER, 0.05, 0.0, 0.5, null,
+            StandAbilities.sniffer(),
+            new Passive(99, "", "")),
+
     MINECART("minecart", "Iron Express", "Minecart", StandRarity.UNCOMMON, 0xA7B0B8, EntityType.MINECART,
             ParticleTypes.CRIT, 0.06, 0.3, 0.9, null,
             StandAbilities.minecart(),

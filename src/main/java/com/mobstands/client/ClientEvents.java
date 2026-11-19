@@ -62,12 +62,37 @@ public final class ClientEvents {
     }
 
     @SubscribeEvent
+    public static void onFrame(net.neoforged.neoforge.client.event.RenderFrameEvent.Pre event) {
+        PilotClient.onFrame(event);
+        PossessClient.onFrame(event);
+    }
+
+    @SubscribeEvent
+    public static void onCameraDistance(net.neoforged.neoforge.client.event.CalculateDetachedCameraDistanceEvent event) {
+        PilotClient.onCameraDistance(event);
+    }
+
+    @SubscribeEvent
     public static void onMoveInput(net.neoforged.neoforge.client.event.MovementInputUpdateEvent event) {
         SpinInput.onInput(event);
+        PilotClient.onInput(event);
+        PossessClient.onInput(event);
     }
 
     @SubscribeEvent
     public static void onUseKey(InputEvent.InteractionKeyMappingTriggered event) {
+        if (PossessClient.onClick(event.isAttack(), event.isUseItem())) {
+            // Soul Control: clicks are the possessed mob's, not your hands'.
+            event.setCanceled(true);
+            event.setSwingHand(false);
+            return;
+        }
+        if (PilotClient.active()) {
+            // Piloting the Phantom: clicks are its guns (fired from PilotClient.tick), not your hands.
+            event.setCanceled(true);
+            event.setSwingHand(false);
+            return;
+        }
         if (event.isAttack()) {
             // Punching one of your duplicate Allays.
             if (ClientStandCache.get().getType() == com.mobstands.stand.StandType.ALLAY && AllayDupeHits.tryHit()) {
@@ -185,6 +210,8 @@ public final class ClientEvents {
         }
         if (mc.level != null) RushFx.tick(mc.level.getGameTime());
         SpinInput.tick();
+        PilotClient.tick();
+        PossessClient.tick();
     }
 
     /** Spin users: Q while holding an item goes to the Spin skill check instead of a plain drop. */
