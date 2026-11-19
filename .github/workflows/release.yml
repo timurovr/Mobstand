@@ -30,12 +30,23 @@ jobs:
           chmod +x gradlew
           ./gradlew build -Pmod_version="$MOD_VERSION" --no-daemon
 
-      - name: Attach the jar to the release
+      - name: Attach the jar and the versions to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          NEO=$(grep '^neo_version=' gradle.properties | cut -d= -f2)
           ls build/libs
           for f in build/libs/*.jar; do
             case "$f" in *-sources.jar|*-javadoc.jar) continue ;; esac
-            gh release upload "$GITHUB_REF_NAME" "$f" --clobber
+            out="build/libs/mobstands-${MOD_VERSION}-mc${MC}-neoforge.jar"
+            [ "$f" = "$out" ] || cp "$f" "$out"
+            gh release upload "$GITHUB_REF_NAME" "$out" --clobber
           done
+          # Add the versions to the release notes (once).
+          gh release view "$GITHUB_REF_NAME" --json body -q .body > notes.md
+          if ! grep -q '^## Versions' notes.md; then
+            printf '\n\n## Versions\n| | |\n|---|---|\n| Mod | %s |\n| Minecraft | %s |\n| NeoForge | %s or newer 21.1.x |\n| Java | 21 |\n' \
+              "$MOD_VERSION" "$MC" "$NEO" >> notes.md
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+          fi
