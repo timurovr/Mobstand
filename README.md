@@ -40,36 +40,45 @@ Requires **JDK 21**.
 |---|---|
 | R | Summon / dismiss |
 | Right click | Basic attack (only with empty hands, not looking at a block or villager) |
-| Z / X / C / V | Abilities 1-4 |
+| Z / X / C / V / B | Abilities 1-5 |
 | J | Stand pose |
 | G | Stand menu (abilities, passives, lore, Requiem trial progress) |
 
+Some abilities are held instead of pressed: C-Moon's X and C open a direction wheel (move the mouse to an arrow, let go).
+In a Barrage Clash, mash Z.
+
 ## The Stands
-| Stand | Mob | Abilities |
-|---|---|---|
-| Jelly Rebound | Slime | Squish Slam, Ricochet Blob, Super Bounce, Mega Quake |
-| Rattling Marksman | Skeleton | Bone Arrow, Rapid Fire, Piercing Shot, Arrow Storm |
-| Weaver of Webs | Spider | Fang Strike, Web Shot, Spider Climb, Web Cocoon |
-| Green Detonator | Creeper | Hissing Burst, Kamikaze Rush, Big Bang, Heart Attack (Sheer Heart Attack-style mini creeper) |
-| Iron Colossus | Iron Golem | Iron Fist, Barrage, Ground Slam, World Breaker |
-| Midnight Wing | Phantom | Talon Swipe, Sky Rush, **Aerosmith** (pilot it, see below), Midnight Swarm, Dream Walk |
-| Void Stalker | Enderman | Void Slash, Barrage, Blink, Void Collapse |
-| Deep Dark Monarch | Warden | Dark Fist, Barrage, Sonic Boom, Sonic Devastation |
-| Little Lullaby | Allay | Allay Rush, Allay Lift, Allay Hold, Roam |
-| Muddy Fortune | Pig | Oink (lures monsters away) |
-| Lazarus Smile | Axolotl | Play Dead, Soul Swap, **Soul Control** (possess a mob, see below), Neoteny (rewinds 6 seconds, items and inventories too) |
-| Weeping Deluge | Squid | November Rain, Downpour, Rain Shot |
-| Iron Express | Minecart | Rail Rider, Powered Rails, Nitro |
-| Ancient Nose | Sniffer | Snout Bump, **Sniff Out** (structure gamble, see below) |
-| Gallop Crown | Horse | Runs with you |
-| Ember Sovereign | Blaze *(Nether)* | Rod Strike, Flame Barrage, Ring of Fire, Inferno Burst |
-| Gilded Swine | Piglin *(Nether)* | Gilded Jab, Snatch |
-| Thunderborn Swine | Zombified Piglin | Rusted Thrust. Only from a Pig Stand struck by lightning |
+| Stand | Mob | Rarity | Abilities (right click, Z, X, C, V...) |
+|---|---|---|---|
+| Jelly Rebound | Slime | Common | Squish Slam, Ricochet Blob, Super Bounce, Mega Quake |
+| Rattling Marksman | Skeleton | Common | Bone Arrow, Rapid Fire, Piercing Shot, Arrow Storm |
+| Muddy Fortune | Pig | Common | Oink (lures monsters away) |
+| Gallop Crown | Horse | Common | Runs with you |
+| Weaver of Webs | Spider | Uncommon | Fang Strike, Web Shot, Spider Climb, Web Cocoon |
+| Green Detonator | Creeper | Uncommon | No punch, it only explodes: Hissing Burst, Kamikaze Rush, Big Bang, Heart Attack (Sheer Heart Attack-style mini creeper) |
+| Little Lullaby | Allay | Uncommon | Allay Rush, Allay Lift, Allay Hold, Roam |
+| Iron Express | Minecart | Uncommon | Rail Rider, Powered Rails, Nitro |
+| Iron Colossus | Iron Golem | Rare | Iron Fist, Barrage, Ground Slam, World Breaker |
+| Midnight Wing | Phantom | Rare | Talon Swipe, Sky Rush, **Aerosmith** (pilot it), Midnight Swarm, Dream Walk |
+| Weeping Deluge | Squid | Rare | Tidal Slam, November Rain, Downpour, Rain Shot |
+| Ancient Nose | Sniffer | Rare | Snout Bump, **Sniff Out** (structure gamble) |
+| Void Stalker | Enderman | Epic | Void Slash, Barrage, Blink, Void Collapse |
+| **Catch the Rainbow** | Dolphin | Epic | Fin Strike, Rain Call, Rain Walk, Rain Blades, Rain Cage, Rain Dash |
+| Deep Dark Monarch | Warden | Legendary | Dark Fist, Barrage, Sonic Boom, Sonic Devastation |
+| Lazarus Smile | Axolotl | Legendary | Play Dead (passive), Soul Swap, **Soul Control** (possess a mob), **Lazarus** (revive the dead) |
+| Ember Sovereign | Blaze *(Nether)* | Rare | Rod Strike, Flame Barrage, Ring of Fire, Inferno Burst |
+| Gilded Swine | Piglin *(Nether)* | Rare | Gilded Jab, Snatch |
+| Thunderborn Swine | Zombified Piglin | Rare | Rusted Thrust. Only from a Pig Stand struck by lightning |
+| **C-Moon** | Shulker *(End)* | Legendary | Shell Strike, Gravity Shift, **Gravity Punch** (wheel), **Gravity Turn** (wheel) |
 
 Every punch lands with a MUDA-style burst of ghost fists. Stands never punch on their own unless you turn auto-assist
-on in the config. Max level is 10. XP comes from using abilities and from kills.
+on in the config. Max level is 10. XP comes from using abilities and from kills. Shift + use an Echoing Arrow to give
+up your Stand (the arrow isn't used).
 
 ## Stand highlights
+* **Barrage Clash**: when two players with Barrage Stands face each other and throw a Barrage within a second, the
+  fists meet in the middle. Mash Z to push the clash point (a tug-of-war bar shows who's winning). Get 30 presses
+  ahead or lead when the 5 seconds run out and your Stand breaks through with a finishing blow; a tie blows you apart.
 * **Aerosmith (Phantom, X)**: fly your Phantom remotely like creative flight (WASD, Space up, Shift down, Ctrl faster)
   while your body stays put. Right click fires a stream of weak arrows; the gun overheats after 70 rounds (bar on the
   right of the screen). F5 changes the camera distance. It can't leave a 64-block range.
@@ -77,17 +86,28 @@ on in the config. Max level is 10. XP comes from using abilities and from kills.
   jump, attack with left click and use its own power with right click: creepers explode, Wardens Sonic Boom (you go
   blind inside one), skeletons shoot, Blazes and Ghasts throw fire, Endermen teleport and more. If its body dies, your
   soul snaps back.
+* **Lazarus (Axolotl, C, level 8)**: players who died within 16 blocks in the last minute and haven't pressed Respawn
+  get back up where they fell; pets and peaceful mobs that died nearby come back whole (their drops vanish). Monsters
+  stay dead. 90 s cooldown.
 * **Sniff Out (Sniffer, Z)**: three slot reels roll random structures; pick one and the Sniffer finds the nearest one
   you haven't visited and leaves a scent trail to it. Pass and wait 10 minutes; pass three times and you get a
   search bar. Its nose weakens away from home: one reel in the Nether, and in the End it only flashes the way to an
   End City for one second.
+* **Catch the Rainbow (Dolphin)**: call the rain, walk on the raindrops, stop the rain into blades or a cage around a
+  creature, and dash through it. In the rain, hits can pass right through you (Raindrop Body).
+* **C-Moon (Shulker)**: sits on your shoulder. Z turns your gravity toward the wall or ceiling you look at (look at the
+  floor to go back). Hold C for the Gravity Turn wheel: up = ceiling, left/right = the walls beside you, down = normal,
+  middle = the wall in front. Hold X for the Gravity Punch wheel, pick a direction, and your next punch turns that
+  creature's gravity that way for 3 minutes. On walls you walk, run and jump like normal ground.
 
 ## Requiems
 | Requiem | From | How to earn it | Abilities |
 |---|---|---|---|
 | **The Ender World** | Enderman Stand | Requiem Trial: kill the Ender Dragon with your Stand out, spend a full day in the End, then pose at midnight | Void Jab, Barrage, Time Skip, **Time Stop** |
-| **Pigstep** (a Piglin Brute) | Piglin Stand | Requiem Trial (shown in the Stand menu) | Brute Jab, Steal, Release, Another World, Null Bubble |
+| **Pigstep** (a Piglin Brute) | Piglin Stand | Requiem Trial: Snatch 30 things, Snatch a Piglin Brute's axe, kill the Wither with your Stand out | Brute Jab, Steal, Release, Another World, Null Bubble |
 | **Guardian Experience Requiem** | Iron Golem Stand | Use a Stand Arrow during a raid at 3 hearts or less: a 50/50. On a fail the arrow breaks, and there's a 15% chance your Stand drops to level 1 | Requiem Fist, MUDA Barrage, **Return to Zero**, Life Giver, Golden Barrier |
+| **Green Detonator: Bites the Dust** | Creeper Stand | Get struck by lightning (you or your Stand) with a level 10 Creeper Stand | Primer, Heart Attack, Big Bang, **Bites the Dust** |
+| **Wonder of Deep** | Warden Stand | Not earnable yet (`/stand set warden_requiem`) | Calamity (passive), Dark Arrival |
 
 * **Time Stop** uses the game's real tick freeze. Arrows stop in the air, and nothing frozen can hurt you.
 * **Pigstep** (Soft & Wet style) steals from a creature: pick its own property (a slime's bounce, a creeper's
@@ -98,6 +118,17 @@ on in the config. Max level is 10. XP comes from using abilities and from kills.
   over and over, gone forever. Its loot goes to your inventory. Against bosses it just nullifies the attack, unless the
   boss is at 10% health or less.
 * **Golden Barrier** (V) is a Love Train-style wall of light.
+* **Primer** (Killer Queen's first bomb): look at mobs to prime them, press again to set them off. Each one swells and
+  flashes like a creeper, then goes up in a big, slow blast that breaks nothing, hurts nothing around it and leaves no
+  trace. Players and bosses take a heavy hit instead.
+* **Bites the Dust** winds the last 6 seconds back for everything within 40 blocks: mobs and players go back where
+  they were with the health and items they had, the dead come back (players too, if they haven't pressed Respawn),
+  broken blocks, chests, furnaces and ender chests return. Whoever hurt you in those seconds explodes when time snaps
+  back. 20 s cooldown.
+* **Wonder of Deep** never fights: it stands right behind you, tall and still. Monsters that come for you meet calamity
+  faster the closer they get (they trip, dripstone falls on them, lightning finds them) and never reach you. Hits and
+  arrows go back to whoever threw them. Summoning it darkens everyone nearby for 3 seconds (Z or
+  `/stand darkness on|off` to toggle).
 
 ## Spin
 Right click a **Steel Ball** to learn the Spin.
@@ -118,17 +149,19 @@ Right click a **Steel Ball** to learn the Spin.
   * Missile + look down: the ball dives under the horse and launches it into the air.
 
 ## Commands (operators)
-`/stand set <type>`, `/stand level <1-10>`, `/stand clear`, `/stand aura on|off`, `/stand spin learn|forget`
+`/stand set <type>`, `/stand level <1-10>`, `/stand clear`, `/stand aura on|off`, `/stand darkness on|off`,
+`/stand spin learn|forget|level <n>`
 
 ## Code layout
 ```
 com.mobstands
   stand/     StandType, StandData (saved per player), StandManager, StandAbilities, Ger, TimeStop,
-             SoundSteal, RequiemTrials, HorseSpin
+             SoundSteal, RequiemTrials, HorseSpin, CreeperRequiem, Mandom (rewind), Calamity, GravityFlip,
+             Clash, Lazarus, RainPowers, PropertySwap
   entity/    StandEntity (driven by its owner, no AI), SpinItemEntity (spinning and thrown items), HeartAttackEntity
   network/   payloads between client and server
   client/    renderers, poses, HUD, Stand menu, cutscenes, Spin input and effects
-  mixin/     TickRateManagerMixin (Time Stop)
+  mixin/     Time Stop tick freeze, C-Moon camera / look / hitbox, creeper-style swelling
 ```
 
 ## Notes

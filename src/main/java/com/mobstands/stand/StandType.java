@@ -147,9 +147,8 @@ public enum StandType {
     SHULKER("shulker", "C-Moon", "Shulker", StandRarity.LEGENDARY, 0x7ED957, EntityType.SHULKER,
             ParticleTypes.END_ROD, 0.10, 0.0, 0.35, null,
             StandAbilities.shulker(),
-            new Passive(1, "Gravity Punch", "Keep punching the same target: from the 10th punch, each one may turn its "
-                    + "gravity left, right or up. It slams into the wall or ceiling, then lives on it for 3 minutes "
-                    + "(or until you die). Works on players too."));
+            new Passive(1, "Inside Out", "While your gravity is turned, walls and ceilings are your floor: you walk, "
+                    + "run and jump on them like normal ground, and you never take fall damage."));
 
     public record Passive(int level, String name, String description) {}
 
