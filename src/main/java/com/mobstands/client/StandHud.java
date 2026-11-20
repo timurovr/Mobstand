@@ -16,7 +16,7 @@ import net.minecraft.util.Mth;
  * out in the world, and themed with the colours of that Stand's mob.
  */
 public final class StandHud {
-    private static final KeyMapping[] KEYS = {StandKeys.BASIC, StandKeys.ABILITY1, StandKeys.ABILITY2, StandKeys.ULTIMATE, StandKeys.ABILITY4};
+    private static final KeyMapping[] KEYS = {StandKeys.BASIC, StandKeys.ABILITY1, StandKeys.ABILITY2, StandKeys.ULTIMATE, StandKeys.ABILITY4, StandKeys.ABILITY5};
 
     /** Fades the HUD in when the Stand appears and out when it leaves. */
     private static float visibility;
@@ -31,6 +31,7 @@ public final class StandHud {
     private static Palette palette(StandType t) {
         return switch (t) {
             case CREEPER -> new Palette(0x5FD14A, 0x0F2A0C);    // creeper green
+            case CREEPER_REQUIEM -> new Palette(0x7FD4FF, 0x0C1E2A); // charged-creeper blue
             case SKELETON -> new Palette(0xDCDCD2, 0x2A2A28);   // bone white
             case SPIDER -> new Palette(0xD8261E, 0x241C17);     // red eyes on dark brown
             case SLIME -> new Palette(0x83D46E, 0x1E3A18);      // jelly green
@@ -43,6 +44,7 @@ public final class StandHud {
             case ENDER_WORLD -> new Palette(0xFFD54A, 0x14101E); // gold on black: The World
             case MINECART -> new Palette(0xB8C2CC, 0x1E2226);    // iron grey
             case WARDEN -> new Palette(0x2FE0EB, 0x082A30);     // sculk cyan on deep teal
+            case WARDEN_REQUIEM -> new Palette(0x9FF7FB, 0x05181C); // pale sculk light on the deepest dark
             case SQUID -> new Palette(0x6FA3E8, 0x0D1828);      // rain blue on deep water
             case AXOLOTL -> new Palette(0xF7A1C4, 0x3A1424);    // axolotl pink
             case HORSE -> new Palette(0xC9925A, 0x2E1E10);      // chestnut brown
@@ -51,6 +53,8 @@ public final class StandHud {
             case SNIFFER -> new Palette(0x5FD18A, 0x3A1E14);    // mossy green on sniffer red-brown
             case PIGLIN -> new Palette(0xF2C94C, 0x3A2410);     // piglin gold
             case ZOMBIFIED_PIGLIN -> new Palette(0x8DBE6A, 0x2A1E1E); // rotten green
+            case SHULKER -> new Palette(0x7ED957, 0x1E2A14);
+            case DOLPHIN -> new Palette(0x8FC9FF, 0x16222E);    // rain blue on storm grey    // C-Moon green on dark shell
         };
     }
 
@@ -181,7 +185,7 @@ public final class StandHud {
                 g.fill(x, by, x + (int) (w * frac), by + 3, argb((int) (255 * v), refilling ? 0x7FD4FF : accent));
             }
         }
-        // Gilded Silence: the stolen sounds, as spawn eggs above the panel (the ready one is framed).
+        // Pigstep: the stolen sounds, as spawn eggs above the panel (the ready one is framed).
         if (t == StandType.PIGLIN_REQUIEM && !d.stolenSounds.isEmpty() && v > 0.5F) {
             int n = d.stolenSounds.size();
             int top = y - 8 - 20;
@@ -212,14 +216,14 @@ public final class StandHud {
 
     private static void renderSpin(GuiGraphics g, Minecraft mc, StandData d, float dt) {
         long ms = net.minecraft.Util.getMillis();
-        if (d.spinLearned && (d.spinLevel != lastSpinLevel || d.spinXp != lastSpinXp)) {
+        if (d.canSpin() && (d.spinLevel != lastSpinLevel || d.spinXp != lastSpinXp)) {
             if (lastSpinLevel != -1) spinShowUntil = ms + 3000L; // you just practised: show the progress for a moment
             lastSpinLevel = d.spinLevel;
             lastSpinXp = d.spinXp;
         }
-        boolean show = d.spinLearned && (d.spinning || d.offSpinning || SpinInput.busy() || ms < spinShowUntil);
+        boolean show = d.canSpin() && (d.spinning || d.offSpinning || SpinInput.busy() || ms < spinShowUntil);
         spinVis = Mth.clamp(spinVis + (show ? 0.3F : -0.2F) * dt, 0.0F, 1.0F);
-        if (spinVis < 0.05F || !d.spinLearned || mc.options.hideGui) return;
+        if (spinVis < 0.05F || !d.canSpin() || mc.options.hideGui) return;
         float v = spinVis;
         int accent = 0xE8C25A, base = 0x2A2010;
         int w = 110;

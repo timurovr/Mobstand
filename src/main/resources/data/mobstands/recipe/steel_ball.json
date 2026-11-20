@@ -2,16 +2,13 @@
   "type": "minecraft:crafting_shaped",
   "category": "equipment",
   "pattern": [
-    "EBI",
-    "BAB",
-    "GBE"
+    "BE",
+    "GB"
   ],
   "key": {
+    "B": { "item": "minecraft:iron_block" },
     "E": { "item": "minecraft:emerald" },
-    "B": { "item": "minecraft:emerald_block" },
-    "I": { "item": "minecraft:iron_ingot" },
-    "A": { "item": "mobstands:echo_arrow" },
-    "G": { "item": "minecraft:gold_block" }
+    "G": { "item": "minecraft:gold_ingot" }
   },
   "result": { "id": "mobstands:steel_ball", "count": 1 }
 }

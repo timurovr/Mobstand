@@ -33,6 +33,14 @@ import java.util.Map;
  */
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class StandRenderer extends EntityRenderer<StandEntity> {
+    /** The Stands' attack animations (ghost fists, MUDA bursts, flying barrage fists, combo wind-ups, impact shells). */
+    public static final boolean ATTACK_FX = true;
+
+    // Built once, not every frame.
+    private static final ResourceLocation CHARGE_SWIRL = ResourceLocation.withDefaultNamespace("textures/entity/creeper/creeper_armor.png");
+    private static final ResourceLocation REQUIEM_SWIRL = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/requiem_swirl.png");
+    private static final ResourceLocation PLACEHOLDER_TEX = ResourceLocation.withDefaultNamespace("textures/entity/creeper/creeper.png");
+
     private final EntityRendererProvider.Context context;
     private final Map<StandType, StandVisual> visuals = new EnumMap<>(StandType.class);
 
@@ -44,7 +52,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
 
     @Override
     public ResourceLocation getTextureLocation(StandEntity entity) {
-        return ResourceLocation.withDefaultNamespace("textures/entity/creeper/creeper.png");
+        return PLACEHOLDER_TEX;
     }
 
     @Override
@@ -88,6 +96,11 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             }
             return;
         }
+        if (type == StandType.SHULKER && stand.animProgress(partial) < 0.0F) {
+            // On your own shoulder in first person it would sit in your face, like a parrot it stays out of view.
+            Minecraft mcs = Minecraft.getInstance();
+            if (stand.getOwnerPlayer() == mcs.player && mcs.options.getCameraType().isFirstPerson()) return;
+        }
         Entity dummy = vis.dummy(stand.level());
         if (dummy == null) return;
 
@@ -99,7 +112,8 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         float limbSwing = stand.limbPos - stand.limbSpeed * (1.0F - partial);
         float progress = stand.animProgress(partial);
         int slot = stand.animSlot();
-        float pulse = progress >= 0.0F ? Mth.sin(progress * Mth.PI) : 0.0F;
+        // (No attack animations: no lurch forward, no straightening up - the Stand holds its pose.)
+        float pulse = ATTACK_FX && progress >= 0.0F ? Mth.sin(progress * Mth.PI) : 0.0F;
 
         vis.comboElapsed = slot >= 0 ? stand.animElapsed(partial) : 0.0F;
         vis.punchSide = stand.punchSide();
@@ -131,7 +145,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             scale *= 1.0F + (com.mobstands.stand.StandAbilities.RAIN_GROW - 1.0F) * g;
         }
         // Summon-punch combo wind-up: lean back and tremble with built-up force, snap forward on release.
-        if (slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) {
+        if (ATTACK_FX && (slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO)) {
             float tc = stand.animElapsed(partial);
             float charge = StandVisual.comboCharge(tc, StandVisual.dashTick(slot), StandVisual.hit1Tick(slot));
             ps.translate(Mth.sin(tc * 2.7F) * 0.025F * charge, 0.0F, 0.15F * charge);
@@ -209,6 +223,8 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
         // Rain Shot: the squid goes see-through while it's down in front of you, so you can still see past it.
         if (type == StandType.SQUID) eased *= 1.0F - 0.6F * stand.rainShotBlend(partial);
+        // Wonder of Deep: a little see-through, like it isn't entirely there.
+        if (type == StandType.WARDEN_REQUIEM) eased *= 0.6F;
         int aura = StandHud.auraColor(type);
         int packedLight = light; // real world lighting (sky + block light at the Stand), like any other mob
         int color = ((int) (255.0F * eased) << 24) | 0xFFFFFF;
@@ -220,7 +236,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
         // Summon-rush / charged combo wind-up for Stands without arms: a slow charge - the Stand's aura swells and
         // brightens (pulsing faster and faster) until it dashes in and strikes.
-        if ((slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) && vis.rightArm == null && type.meleeBasic()) {
+        if (ATTACK_FX && (slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) && vis.rightArm == null && type.meleeBasic()) {
             float tc = stand.animElapsed(partial);
             float charge = StandVisual.comboCharge(tc, StandVisual.dashTick(slot), StandVisual.hit1Tick(slot));
             if (charge > 0.01F) {
@@ -228,6 +244,38 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
                 glow(ps, buffers, vis.main, 0.45F * charge * throb, 1.05F + 0.12F * charge, aura, bodyCenterY(type), true);
                 glow(ps, buffers, vis.main, 0.25F * charge * charge, 1.02F, 0xFFFFFF, bodyCenterY(type), true);
             }
+        }
+        if (vis.chargeShell != null) {
+            // The charged-creeper swirl, exactly like vanilla's: the energy texture scrolling over a slightly bigger shell.
+            float scroll = (stand.tickCount + partial) * 0.004F; // slow, lazy crawl
+            vis.chargeShell.prepareMobModel(dummy, limbSwing, limbAmount, partial);
+            vis.chargeShell.setupAnim(dummy, limbSwing, limbAmount, age, 0.0F, pitch);
+            VertexConsumer swirl = buffers.getBuffer(RenderType.energySwirl(
+                    CHARGE_SWIRL, scroll % 1.0F, scroll % 1.0F));
+            vis.chargeShell.renderToBuffer(ps, swirl, packedLight, OverlayTexture.NO_OVERLAY, ((int) (255.0F * eased) << 24) | 0x555555);
+        } else if (type.requiem()) {
+            // Every Requiem wears a charged-creeper aura: the same crawling energy (in neutral white, so the tint is its true
+            // colour - vanilla's swirl is blue, which turned gold into green) over a slightly bigger copy of its
+            // body - tinted its own colour (gold for The Ender World and GER, amethyst for Pigstep).
+            float scroll = (stand.tickCount + partial) * 0.004F; // slow, lazy crawl
+            VertexConsumer swirl = buffers.getBuffer(RenderType.energySwirl(
+                    REQUIEM_SWIRL, scroll % 1.0F, scroll % 1.0F));
+            float cy = bodyCenterY(type);
+            ps.pushPose();
+            ps.translate(0.0F, cy, 0.0F);
+            ps.scale(1.06F, 1.04F, 1.06F);
+            ps.translate(0.0F, -cy, 0.0F);
+            int c = type == StandType.GER ? 0x3CFF8A : type.color(); // GER: emerald green
+            int tint = (((c >> 16) & 0xFF) / 2 << 16) | (((c >> 8) & 0xFF) / 2 << 8) | ((c & 0xFF) / 2); // half strength: a glow, not paint
+            if (type == StandType.ENDER_WORLD) tint = 0xD9A000; // a rich, proper gold
+            // ...faded down a bit more: it should hang around them, not coat them.
+            tint = (((tint >> 16) & 0xFF) * 13 / 20 << 16) | (((tint >> 8) & 0xFF) * 13 / 20 << 8) | ((tint & 0xFF) * 13 / 20);
+            // Wonder of Deep: barely there - a faint shimmer you half-notice, not a glow.
+            if (type == StandType.WARDEN_REQUIEM) {
+                tint = (((tint >> 16) & 0xFF) * 3 / 20 << 16) | (((tint >> 8) & 0xFF) * 3 / 20 << 8) | ((tint & 0xFF) * 3 / 20);
+            }
+            vis.main.renderToBuffer(ps, swirl, packedLight, OverlayTexture.NO_OVERLAY, ((int) (255.0F * eased) << 24) | tint);
+            ps.popPose();
         }
         if (vis.outer != null) {
             VertexConsumer shell = buffers.getBuffer(RenderType.entityTranslucent(vis.texture));
@@ -248,15 +296,16 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         if (vis.eyes != null) {
             VertexConsumer eyes = buffers.getBuffer(RenderType.eyes(vis.eyes));
             int glowCol = ((int) (255.0F * eased) << 24) | 0xFFFFFF;
-            if (type == StandType.GER) {
-                // GER's emeralds and eyes pulse slowly, like a heartbeat of light.
+            if (type == StandType.GER || type == StandType.PIGLIN_REQUIEM) {
+                // GER's emeralds and eyes - and Pigstep's amethyst eyes, crown gem, fists and pauldrons -
+                // pulse slowly, like a heartbeat of light.
                 int lv = (int) (255.0F * (0.3F + 0.45F * (0.5F + 0.5F * Mth.sin(age * 0.11F))));
                 glowCol = ((int) (255.0F * eased) << 24) | (lv << 16) | (lv << 8) | lv;
             }
             vis.main.renderToBuffer(ps, eyes, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, glowCol);
         }
         // ORA barrage (the Barrage ability): big fists keep flying out of the Stand for the whole move.
-        if (slot == 1 && progress >= 0.0F && vis.rightArm != null && type.barrage()) {
+        if (ATTACK_FX && slot == 1 && progress >= 0.0F && vis.rightArm != null && type.barrage()) {
             float elapsed = stand.animElapsed(partial);
             float fadeEdge = Mth.clamp(Math.min(progress, 1.0F - progress) * 8.0F, 0.0F, 1.0F);
             final int fists = 9;
@@ -282,7 +331,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
 
         // Summon-punch combo: two big ghost fists, one per impact in the sound (right, then left).
-        if ((slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) && vis.rightArm != null) {
+        if (ATTACK_FX && (slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) && vis.rightArm != null) {
             float t = stand.animElapsed(partial);
             int[] hits = {StandVisual.hit1Tick(slot), stand.comboHit2()};
             for (int k = 0; k < 2; k++) {
@@ -305,7 +354,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
 
         // Regular punch for fisted Stands: right ghost fist, plus a left one on a double-click.
-        if (slot == 0 && progress >= 0.0F && vis.rightArm != null) {
+        if (ATTACK_FX && slot == 0 && progress >= 0.0F && vis.rightArm != null) {
             float tp = stand.animElapsed(partial);
             int[] hits = {com.mobstands.stand.StandAbilities.PUNCH_HIT_TICK, stand.comboHit2()};
             boolean leftOnly = stand.punchSide() == 1; // follow-up punch: just the left fist
@@ -343,7 +392,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
 
         // Body-striking Stands (Creeper, Spider, Phantom, Slime): a glowing shell of the whole mob bursts on impact.
-        if ((slot == 0 || slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) && progress >= 0.0F && type.meleeBasic() && vis.rightArm == null && type != StandType.PHANTOM) {
+        if (ATTACK_FX && (slot == 0 || slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) && progress >= 0.0F && type.meleeBasic() && vis.rightArm == null && type != StandType.PHANTOM) {
             float tb = stand.animElapsed(partial);
             int first = slot == 0 ? com.mobstands.stand.StandAbilities.PUNCH_HIT_TICK : StandVisual.hit1Tick(slot);
             int[] hits = {first, stand.comboHit2()};
@@ -478,7 +527,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
     private static float bodyCenterY(StandType type) {
         // Model space here is upside down with the feet at y = 1.5 (24 px): centre of each mob's body.
         return switch (type) {
-            case CREEPER -> 0.65F;
+            case CREEPER, CREEPER_REQUIEM -> 0.65F;
             case SPIDER -> 1.15F;
             case SLIME -> 1.25F;
             case PHANTOM -> 1.2F;

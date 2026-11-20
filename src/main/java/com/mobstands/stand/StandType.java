@@ -15,6 +15,12 @@ public enum StandType {
             StandAbilities.slime(),
             new Passive(4, "Gelatinous Body", "You take no fall damage while your Stand is out.")),
 
+    // Creeper Requiem, a charged creeper - Killer Queen: Bites the Dust style. Never rolled: lightning makes it.
+    CREEPER_REQUIEM("creeper_requiem", "Green Detonator: Bites the Dust", "Charged Creeper", StandRarity.LEGENDARY, 0x7FD4FF, EntityType.CREEPER,
+            ParticleTypes.ELECTRIC_SPARK, 0.08, 0.05, 1.05, null,
+            StandAbilities.creeperRequiem(),
+            new Passive(1, "Blast Proof", "Explosions deal 60% less damage to you while your Stand is out.")),
+
     SKELETON("skeleton", "Rattling Marksman", "Skeleton", StandRarity.COMMON, 0xE8E8E8, EntityType.SKELETON,
             ParticleTypes.WHITE_ASH, 0.06, 0.05, 1.0, StandProjectile.Kind.BONE_ARROW,
             StandAbilities.skeleton(),
@@ -83,7 +89,7 @@ public enum StandType {
             new Passive(99, "", "")),
 
     // Piglin Requiem, Soft & Wet style: it steals the sound out of a creature - and the power that came with it.
-    PIGLIN_REQUIEM("gilded_silence", "Gilded Silence", "Piglin Brute", StandRarity.LEGENDARY, 0xB07CFF, EntityType.PIGLIN_BRUTE,
+    PIGLIN_REQUIEM("gilded_silence", "Pigstep", "Piglin Brute", StandRarity.LEGENDARY, 0xB07CFF, EntityType.PIGLIN_BRUTE,
             ParticleTypes.WAX_ON, 0.08, 0.05, 1.0, null,
             StandAbilities.piglinRequiem(),
             new Passive(99, "", "")),
@@ -119,7 +125,31 @@ public enum StandType {
     WARDEN("warden", "Deep Dark Monarch", "Warden", StandRarity.LEGENDARY, 0x1FB8C4, EntityType.WARDEN,
             ParticleTypes.SCULK_SOUL, 0.10, 0.3, 0.8, null,
             StandAbilities.warden(),
-            new Passive(5, "Deep Senses", "Permanent Night Vision while your Stand is out."));
+            new Passive(5, "Deep Senses", "Permanent Night Vision while your Stand is out.")),
+
+    // Wonder of U, Warden-style (working name): nobody wants to come after you - and the ones who do meet calamity.
+    WARDEN_REQUIEM("warden_requiem", "Wonder of Deep", "Warden", StandRarity.LEGENDARY, 0x6FF0F7, EntityType.WARDEN,
+            ParticleTypes.SCULK_SOUL, 0.10, 0.3, 0.8, null,
+            StandAbilities.wardenRequiem(),
+            new Passive(1, "Calamity", "Monsters that come for you meet calamity faster the closer they get - none of them ever reach you. "
+                    + "Other creatures mostly won't come after you (70% ignore you, 10% panic and run). The ones that do "
+                    + "build up calamity: they trip, stalactites fall on them, they catch fire, lightning finds them... until it kills "
+                    + "them. Hitting you makes it much worse. Players get it too, at half speed. Bosses aren't afraid of you.")),
+
+    // Catch the Rainbow: stops raindrops in the air - walks on them, cuts with them, comes apart into them.
+    DOLPHIN("dolphin", "Catch the Rainbow", "Dolphin", StandRarity.EPIC, 0x8FC9FF, EntityType.DOLPHIN,
+            ParticleTypes.SPLASH, 0.08, 0.7, 0.75, null,
+            StandAbilities.dolphin(),
+            new Passive(1, "Raindrop Body", "In the rain, a hit can pass right through you: your body comes apart into "
+                    + "raindrops. 20% chance, up to 38% at level 10.")),
+
+    // C-Moon: a little Shulker riding your shoulder, gravity turned inside out around it.
+    SHULKER("shulker", "C-Moon", "Shulker", StandRarity.LEGENDARY, 0x7ED957, EntityType.SHULKER,
+            ParticleTypes.END_ROD, 0.10, 0.0, 0.35, null,
+            StandAbilities.shulker(),
+            new Passive(1, "Gravity Punch", "Keep punching the same target: from the 10th punch, each one may turn its "
+                    + "gravity left, right or up. It slams into the wall or ceiling, then lives on it for 3 minutes "
+                    + "(or until you die). Works on players too."));
 
     public record Passive(int level, String name, String description) {}
 
@@ -140,7 +170,7 @@ public enum StandType {
     StandType(String id, String standName, String mobName, StandRarity rarity, int color, EntityType<?> vanilla,
               ParticleOptions aura, double powerPerLevel, double hover, double scale,
               StandProjectile.Kind autoKind, Ability[] abilities, Passive passive) {
-        if (abilities.length > StandData.SLOTS || abilities.length < 4) throw new IllegalStateException("Stand needs 4 or 5 abilities: " + id);
+        if (abilities.length > StandData.SLOTS || abilities.length < 4) throw new IllegalStateException("Stand needs 4 to 6 abilities: " + id);
         if (abilities.length < StandData.SLOTS) {
             // Most Stands have 4 abilities; the 5th key (V) is empty for them.
             Ability[] padded = java.util.Arrays.copyOf(abilities, StandData.SLOTS);
@@ -184,17 +214,19 @@ public enum StandType {
      * instead of floating a block away.
      */
     public boolean closeBehind() {
-        return this == SKELETON || this == CREEPER || this == BLAZE;
+        return this == SKELETON || this == CREEPER || this == CREEPER_REQUIEM || this == BLAZE;
     }
 
     /** Stands whose basic attack is a melee strike (everyone except the archer and the fireball thrower). */
     public boolean meleeBasic() {
-        return this != SKELETON && hasBasic();
+        return this != SKELETON && this != SQUID && hasBasic(); // (the Squid's right click is its Tidal Slam, not a punch)
     }
 
-    /** Stands with a basic attack on right click (the Squid and the Axolotl don't fight with their own body). */
+    /** Stands with a basic attack on right click (the Axolotl doesn't fight with its own body). */
     public boolean hasBasic() {
-        return this != SQUID && this != AXOLOTL && this != HORSE && this != PIG && !isCart();
+        // (a creeper doesn't punch: it explodes)
+        return this != AXOLOTL && this != HORSE && this != PIG && this != CREEPER && this != CREEPER_REQUIEM
+                && this != WARDEN_REQUIEM && !isCart(); // (Wonder of Deep never fights with its own hands)
     }
 
     /**
@@ -211,23 +243,25 @@ public enum StandType {
     public Pool pool() {
         return switch (this) {
             case BLAZE, PIGLIN, ZOMBIFIED_PIGLIN, PIGLIN_REQUIEM -> Pool.NETHER;
+            case SHULKER -> Pool.END;
             default -> Pool.OVERWORLD;
         };
     }
 
     /** Only the niche Stands get the sparkle + glow materialize effect, so it stays special. */
     public boolean summonEffects() {
-        return this == IRON_GOLEM || this == GER || this == ENDERMAN || this == ENDER_WORLD || this == WARDEN || this == AXOLOTL;
+        return this == IRON_GOLEM || this == GER || this == ENDERMAN || this == ENDER_WORLD || this == WARDEN || this == WARDEN_REQUIEM || this == AXOLOTL
+                || this == SHULKER;
     }
 
     /** Intimidating Stands get the menacing blade sound when they appear. */
     public boolean menacing() {
-        return this == WARDEN || this == ENDERMAN || this == ENDER_WORLD || this == IRON_GOLEM || this == GER || this == AXOLOTL;
+        return this == WARDEN || this == WARDEN_REQUIEM || this == ENDERMAN || this == ENDER_WORLD || this == IRON_GOLEM || this == GER || this == AXOLOTL;
     }
 
     /** Requiem Stands: already complete. No levels - every ability is there from the start, at full strength. */
     public boolean requiem() {
-        return this == ENDER_WORLD || this == GER || this == PIGLIN_REQUIEM;
+        return this == ENDER_WORLD || this == GER || this == PIGLIN_REQUIEM || this == CREEPER_REQUIEM || this == WARDEN_REQUIEM;
     }
 
     /** A bit of story for the Stand menu (empty if there's none). */
@@ -244,6 +278,14 @@ public enum StandType {
                     + "block attacks - it nullifies them. Any action aimed at what it protects is returned to zero, as if it never "
                     + "happened. Whoever tried it is left reliving that moment, dying again and again, never arriving anywhere. "
                     + "Its defense isn't strong. It's infinite.";
+            case CREEPER_REQUIEM -> "A creeper's whole life is one moment: the hiss, the flash, gone. Struck by lightning, "
+                    + "this one got that moment back - and learned to keep it. Anything it touches can become the bomb. And when "
+                    + "things go wrong, it winds the world back a few seconds... but whoever hurt you still carries the charge, "
+                    + "and when time snaps back into place, they bite the dust.";
+            case WARDEN_REQUIEM -> "A Warden is blind. It hunts by feeling the vibrations of whatever comes near it. "
+                    + "Its Requiem only feels one thing: someone coming after you. It doesn't fight them. The cave does. "
+                    + "They trip, dripstone falls, their arrows turn around, and the closer they get the worse it gets. "
+                    + "Nobody who chases you ever reaches you.";
             case PIGLIN_REQUIEM -> "A Piglin takes whatever it wants. Its Requiem learned that the things worth stealing aren't only "
                     + "the ones you can hold: it steals the sound out of a creature - and with the sound, the power that came with it. "
                     + "A creeper with no hiss can't explode. But you can.";

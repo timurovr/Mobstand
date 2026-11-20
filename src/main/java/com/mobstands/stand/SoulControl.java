@@ -133,6 +133,7 @@ public final class SoulControl {
             }
         }
         if (best == null) return;
+        StandCombat.credit(p, best);
         if (m.getAttribute(Attributes.ATTACK_DAMAGE) != null) m.doHurtTarget(best);
         else best.hurt(m.damageSources().mobAttack(m), 2.0F);
     }

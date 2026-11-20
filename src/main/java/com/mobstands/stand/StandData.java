@@ -14,7 +14,7 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public static final int MAX_LEVEL = 10;
     /** The Spin technique levels up to 10 (10 = master). */
     public static final int SPIN_MAX_LEVEL = 10;
-    public static final int SLOTS = 5; // 0 = basic, 1 = Z, 2 = X, 3 = C, 4 = V (only some Stands have a 5th)
+    public static final int SLOTS = 6; // 0 = basic, 1 = Z, 2 = X, 3 = C, 4 = V, 5 = B (only some Stands use V and B)
 
     private StandType type;
     private int level = 1;
@@ -92,6 +92,8 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public long rainUntil, surgeUntil, delugeUntil;
     /** Squid Stand: November Rain switched on (it costs hunger while it falls). */
     public boolean rainOn;
+    /** Dolphin: Rain Walk is on (you stand on the raindrops). */
+    public boolean rainWalk;
     /** Allay Stand: carrying you through the air until this game time. */
     public long liftStart, liftUntil;
     /** Horse Stand Rush: charging until this time (0 = not charging); running while rushing. */
@@ -113,15 +115,22 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public boolean reachedNether;
     /** Sniffer: Sniff Out rolls passed on in a row (3 = the next one is a search). */
     public int sniffMisses;
+
+    /** The Spin only works for people without a Stand. */
+    public boolean canSpin() {
+        return spinLearned && type == null;
+    }
     /** Sniffer: structures you've been led to and reached ("dimension|x|z"); it won't lead you back to them. */
     public final java.util.List<String> sniffVisited = new java.util.ArrayList<>();
-    /** Gilded Silence: stolen sounds (entity type ids, or "thunder") and which one is ready. */
+    /** Pigstep: stolen sounds (entity type ids, or "thunder") and which one is ready. */
     public final java.util.List<String> stolenSounds = new java.util.ArrayList<>();
     public int soundSel;
     /** Minecart Stand: riding it right now. */
     public boolean cartRiding;
     /** Requiem aura on/off (/stand aura). */
     public boolean auraOff;
+    /** Wonder of Deep: summoning it doesn't darken the world around you. */
+    public boolean wodDarkOff;
     public Vec3Holder cartLast = new Vec3Holder();
     /** Mobs the cart just ran over -> game time it may hit them again. */
     public final java.util.Map<java.util.UUID, Long> cartHits = new java.util.HashMap<>();
@@ -233,6 +242,7 @@ public class StandData implements INBTSerializable<CompoundTag> {
         tag.putLong("TsStart", timeStopStart);
         tag.putBoolean("SpinLearned", spinLearned);
         tag.putBoolean("AuraOff", auraOff);
+        tag.putBoolean("WodDarkOff", wodDarkOff);
         tag.putInt("SpinLevel", spinLevel);
         tag.putInt("SpinXp", spinXp);
         tag.putLong("TsEnd", timeStopEnd);
@@ -249,6 +259,7 @@ public class StandData implements INBTSerializable<CompoundTag> {
         tag.put("SniffVisited", sv);
         tag.putString("Sounds", String.join(",", stolenSounds));
         tag.putInt("SoundSel", soundSel);
+        tag.putBoolean("RainWalk", rainWalk);
         return tag;
     }
 
@@ -256,6 +267,7 @@ public class StandData implements INBTSerializable<CompoundTag> {
         type = StandType.byId(tag.getString("Type"));
         spinLearned = tag.getBoolean("SpinLearned");
         auraOff = tag.getBoolean("AuraOff");
+        wodDarkOff = tag.getBoolean("WodDarkOff");
         spinLevel = Math.max(1, Math.min(SPIN_MAX_LEVEL, tag.getInt("SpinLevel")));
         spinXp = Math.max(0, tag.getInt("SpinXp"));
         if ("spin".equals(tag.getString("Type"))) {
@@ -287,6 +299,7 @@ public class StandData implements INBTSerializable<CompoundTag> {
         trialCount = tag.getInt("TrialCount");
         reachedEnd = tag.getBoolean("ReachedEnd");
         reachedNether = tag.getBoolean("ReachedNether");
+        rainWalk = tag.getBoolean("RainWalk");
         sniffMisses = tag.getInt("SniffMisses");
         sniffVisited.clear();
         net.minecraft.nbt.ListTag sv = tag.getList("SniffVisited", net.minecraft.nbt.Tag.TAG_STRING);

@@ -18,5 +18,9 @@ public final class ModItems {
     public static final DeferredItem<com.mobstands.item.SteelBallItem> STEEL_BALL = ITEMS.register("steel_ball",
             () -> new com.mobstands.item.SteelBallItem(new Item.Properties().stacksTo(2).rarity(Rarity.EPIC)));
 
+    /** Spin Scroll: read it to learn the Spin (and the Steel Ball recipe). */
+    public static final DeferredItem<com.mobstands.item.SpinScrollItem> SPIN_SCROLL = ITEMS.register("spin_scroll",
+            () -> new com.mobstands.item.SpinScrollItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
+
     private ModItems() {}
 }

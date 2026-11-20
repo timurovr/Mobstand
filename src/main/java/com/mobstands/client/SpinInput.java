@@ -172,7 +172,7 @@ public final class SpinInput {
     private static long graceUntil;
 
     private static boolean active(Minecraft mc) {
-        return mc.player != null && mc.screen == null && ClientStandCache.get().spinLearned
+        return mc.player != null && mc.screen == null && ClientStandCache.get().canSpin()
                 && (!mc.player.getMainHandItem().isEmpty() || !mc.player.getOffhandItem().isEmpty()) && !mc.player.isSpectator();
     }
 

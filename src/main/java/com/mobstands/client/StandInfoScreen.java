@@ -15,8 +15,8 @@ import java.util.List;
 
 /** Stand information: name, rarity, level, XP, abilities with live cooldowns, passive and progression path. */
 public class StandInfoScreen extends Screen {
-    private static final KeyMapping[] KEYS = {StandKeys.BASIC, StandKeys.ABILITY1, StandKeys.ABILITY2, StandKeys.ULTIMATE, StandKeys.ABILITY4};
-    private static final String[] SLOT_NAMES = {"Basic Attack", "Ability 1", "Ability 2", "Ultimate", "Ability 4"};
+    private static final KeyMapping[] KEYS = {StandKeys.BASIC, StandKeys.ABILITY1, StandKeys.ABILITY2, StandKeys.ULTIMATE, StandKeys.ABILITY4, StandKeys.ABILITY5};
+    private static final String[] SLOT_NAMES = {"Basic Attack", "Ability 1", "Ability 2", "Ultimate", "Ability 4", "Ability 5"};
 
     private int scroll;
     private int contentHeight;

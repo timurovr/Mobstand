@@ -23,10 +23,14 @@ public final class PlayerPoses {
     /** The pose each player was last holding, so it can fade out smoothly after they drop it. */
     private static final Map<UUID, StandType> LAST_POSE = new HashMap<>();
 
+    /** Your character's extra sprint swing, jump/fall arms and walking sway: off - plain vanilla movement. */
+    private static final boolean PLAYER_MOVE_FX = false;
+
     private PlayerPoses() {}
 
     public static void apply(HumanoidModel<?> m, LivingEntity e, float limbSwing, float amount, float age, float headPitch) {
         if (!(e instanceof Player p)) return;
+        m.head.zRot = 0.0F; // vanilla never resets the head's roll, and the model is shared by every player
         if (age == 0.0F) return; // first-person hand rendering: leave the arms alone
         if (CartRide.riding(p)) {
             // Sitting in the Minecart Stand: vanilla's riding pose, hands on the rim.
@@ -47,10 +51,12 @@ public final class PlayerPoses {
         if (p.isSleeping() || p.isSwimming() || p.isFallFlying() || p.isPassenger() || p.isSpectator()) return;
 
         boolean busy = m.attackTime > 0.0F || p.isUsingItem();
-        boolean grounded = p.onGround() || p.getAbilities().flying || p.isInWater();
+        // Standing on a wall or ceiling (C-Moon) counts as standing: vanilla walking, not the falling pose.
+        boolean turned = com.mobstands.stand.GravityBox.CLIENT.containsKey(p.getId());
+        boolean grounded = p.onGround() || p.getAbilities().flying || p.isInWater() || turned;
 
-        // ---- everyone: sprint, jump/fall, walking sway
-        if (!busy) {
+        // ---- everyone: sprint, jump/fall, walking sway (switched off: plain vanilla movement)
+        if (PLAYER_MOVE_FX && !busy) {
             if (p.isSprinting() && grounded) {
                 m.rightArm.xRot *= 1.35F;
                 m.leftArm.xRot *= 1.35F;
@@ -160,6 +166,18 @@ public final class PlayerPoses {
                 leg(m.rightLeg, -0.15F, 0.0F, w);
                 leg(m.leftLeg, 0.1F, 0.0F, w);
             }
+            case WARDEN_REQUIEM -> {
+                // Wonder of Deep is right behind you... and you can't look at it. Everything goes still: arms hang
+                // dead at your sides, feet together, no breathing - only your head, bowed down and turned away to
+                // one side, like you're ashamed. Or scared.
+                still(m.rightArm, w);
+                still(m.leftArm, w);
+                still(m.rightLeg, w);
+                still(m.leftLeg, w);
+                m.head.xRot = Mth.lerp(w, m.head.xRot, 0.62F);
+                m.head.yRot = Mth.lerp(w, m.head.yRot, 0.32F);
+                m.head.zRot = 0.28F * w;
+            }
             case WARDEN -> { // menacing hunch, head down, arms loose
                 arm(m.rightArm, -0.35F, 0.0F, 0.2F + br, w);
                 arm(m.leftArm, -0.35F, 0.0F, -0.2F - br, w);
@@ -167,7 +185,7 @@ public final class PlayerPoses {
                 leg(m.rightLeg, 0.0F, 0.15F, w);
                 leg(m.leftLeg, 0.0F, -0.15F, w);
             }
-            case CREEPER -> { // hand over the face, other hand on the hip
+            case CREEPER, CREEPER_REQUIEM -> { // hand over the face, other hand on the hip
                 arm(m.rightArm, -2.4F, -0.55F, 0.2F, w);
                 arm(m.leftArm, -0.25F, 0.0F, -0.65F - br, w);
                 head(m, -0.1F, 0.25F, w);
@@ -250,6 +268,13 @@ public final class PlayerPoses {
     }
 
     /** Adds a pitch offset, keeping the head following where the player looks. Never tilts it sideways. */
+    /** A limb hanging perfectly still and straight (vanilla's idle sway and walk swing faded out). */
+    private static void still(ModelPart p, float w) {
+        p.xRot = Mth.lerp(w, p.xRot, 0.0F);
+        p.yRot = Mth.lerp(w, p.yRot, 0.0F);
+        p.zRot = Mth.lerp(w, p.zRot, 0.0F);
+    }
+
     private static void head(HumanoidModel<?> m, float pitch, float tilt, float w) {
         m.head.xRot += pitch * w;
     }

@@ -46,6 +46,7 @@ public class MobStands {
         if (event.getTabKey() == CreativeModeTabs.COMBAT) {
             event.accept(ModItems.ECHO_ARROW.get());
             event.accept(ModItems.STEEL_BALL.get());
+            event.accept(ModItems.SPIN_SCROLL.get());
         }
     }
 }

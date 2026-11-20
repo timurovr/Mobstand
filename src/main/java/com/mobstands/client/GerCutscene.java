@@ -48,11 +48,19 @@ public final class GerCutscene {
     private static Entity camera;
     private static boolean skipWasDown = true;
     private static float orbit;
-    private static final int COPIES = 5;
+    /** The cutscene plays on a stage high above the world (nothing can block the camera), in a rainbow cosmos. */
+    private static Vec3 stage = Vec3.ZERO;
+    /** Set while the mob is being drawn on the stage: its copies then stretch out in one long straight line. */
+    private static boolean onStage;
+    private static final int STAGE_COPIES = 18;
+    private static final int COPIES = 7;
 
     public static void start(GerCutscenePayload p) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
+        // The caster gets this twice (their own cinematic one, and the one everyone near the mob gets): the second,
+        // plain copy must not replace the loop the cutscene is running on, or its clock freezes at zero.
+        if (!p.cinematic() && LOOPS.containsKey(p.mobId())) return;
         Loop l = new Loop();
         l.mobId = p.mobId();
         l.ownerId = p.ownerId();
@@ -62,6 +70,8 @@ public final class GerCutscene {
             endCine();
             cine = l;
             camera = EntityType.MARKER.create(mc.level);
+            stage = new Vec3(l.origin.x, mc.level.getMaxBuildHeight() + 90.0D, l.origin.z);
+
             orbit = 0.0F;
             skipWasDown = true; // the key you countered with doesn't skip it straight away
             if (camera != null) {
@@ -112,10 +122,18 @@ public final class GerCutscene {
             return;
         }
         skipWasDown = down;
+        magic(mc, cine);
+        // The barrage sound lands on the deaths: it runs exactly as long as they do.
+        if (cine.t == Ger.T_DEATHS) mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                com.mobstands.registry.ModSounds.GER_RETURN_TO_ZERO.get(), 1.0F, 1.0F));
         if (cine.t > Ger.T_DONE || !LOOPS.containsKey(cine.mobId)) {
             endCine();
             return;
         }
+        // You stand dead still while it plays: no drifting forward, no walking legs.
+        mc.player.setDeltaMovement(0.0D, Math.min(0.0D, mc.player.getDeltaMovement().y), 0.0D);
+        mc.player.walkAnimation.setSpeed(0.0F);
+        mc.player.setSprinting(false);
         if (camera != null) {
             camera.xo = camera.getX();
             camera.yo = camera.getY();
@@ -127,38 +145,180 @@ public final class GerCutscene {
         }
     }
 
-    /** Where the camera is this tick. */
+    /** A smooth 0..1 ease. */
+    private static double ease(double k) {
+        k = Mth.clamp(k, 0.0D, 1.0D);
+        return k * k * (3.0D - 2.0D * k);
+    }
+
+    /**
+     * Where the camera is this tick. Three shots:
+     * 1. the counter - a wide side-on shot of you and the attacker frozen mid-strike, slowly pushing in;
+     * 2. the rewind - behind the attacker's shoulder, looking down the curving trail of its copies, drifting round;
+     * 3. the deaths - a low close-up on the mob, jolting with each death.
+     */
+    /** Where something in the world appears on the stage. */
+    private static Vec3 onStage(Vec3 world) {
+        return stage.add(world.subtract(cine.origin));
+    }
+
     private static void placeCamera(Minecraft mc, float step) {
         Loop l = cine;
-        Vec3 eye = mc.player.getEyePosition();
+        Entity mob = mc.level.getEntity(l.mobId);
+        double h = mob == null ? 1.8D : mob.getBbHeight();
+        Vec3 mobPos = onStage(mob == null ? l.origin : mob.position());
+        Entity owner = mc.level.getEntity(l.ownerId);
+        Vec3 line = l.origin.subtract(owner == null ? l.origin.add(-1.0D, 0.0D, 0.0D) : owner.position()).multiply(1.0D, 0.0D, 1.0D);
+        line = line.lengthSqr() < 1.0E-4D ? new Vec3(1.0D, 0.0D, 0.0D) : line.normalize();
+        Vec3 side = new Vec3(-line.z, 0.0D, line.x);
+        Vec3 center = mobPos.add(0.0D, h * 0.6D, 0.0D);
         Vec3 pos, look;
-        if (l.t < Ger.T_REWIND) {
-            // Shot 1: on you - slowly pushing in on your face, your Stand looming behind you.
-            Vec3 fwd = Vec3.directionFromRotation(0.0F, mc.player.getYRot());
-            Vec3 side = new Vec3(-fwd.z, 0.0D, fwd.x);
-            double k = l.t / (double) Ger.T_REWIND;
-            pos = eye.add(fwd.scale(3.4D - k * 0.9D)).add(side.scale(0.7D)).add(0.0D, 0.15D, 0.0D);
-            look = eye.add(0.0D, -0.1D, 0.0D);
+        float tt = l.t;
+        if (tt < Ger.T_DEATHS) {
+            // From off to its side and a little in front: the mob in the foreground, and the line of its copies
+            // stretching away behind it into the distance. The camera slowly glides along the line.
+            orbit += 0.03F * step;
+            double k = ease(tt / (double) Ger.T_DEATHS);
+            pos = center.add(side.scale(2.6D + h * 1.2D)).add(line.scale(-2.4D - h * 0.5D + orbit)).add(0.0D, 0.5D + h * 0.2D, 0.0D);
+            look = center.add(line.scale(2.0D + k * 3.5D));
         } else {
-            // Shot 2: on the mob, from the side, so the line of copies behind it is in view; slowly drifting round.
-            Entity mob = mc.level.getEntity(l.mobId);
-            double h = mob == null ? 1.8D : mob.getBbHeight();
-            Vec3 center = (mob == null ? l.origin : mob.position()).add(0.0D, h * 0.6D, 0.0D);
-            Vec3 line = l.origin.subtract(mc.player.position()).multiply(1.0D, 0.0D, 1.0D);
-            line = line.lengthSqr() < 1.0E-4D ? new Vec3(1.0D, 0.0D, 0.0D) : line.normalize();
-            orbit += 0.5F * step;
-            double a = Math.toRadians(70.0D + orbit);
-            Vec3 dir = line.scale(Math.cos(a)).add(new Vec3(-line.z, 0.0D, line.x).scale(Math.sin(a)));
-            double dist = 5.0D + h * 1.6D;
-            pos = center.add(dir.scale(dist)).add(line.scale(1.5D)).add(0.0D, 1.0D + h * 0.3D, 0.0D);
-            look = center.add(line.scale(1.5D));
+            // The deaths: low, from the other side, the copies still trailing off behind - jolting with each death.
+            float d = (tt - Ger.T_DEATHS) % Ger.DEATH_LEN;
+            double jolt = d < 4.0F ? (4.0F - d) * 0.04D : 0.0D;
+            double wob = Math.sin(tt * 1.7D) * jolt;
+            pos = center.add(side.scale(-(2.4D + h))).add(line.scale(-2.0D - h * 0.4D)).add(0.0D, -h * 0.2D, 0.0D).add(side.scale(wob));
+            look = center.add(line.scale(1.5D)).add(0.0D, wob, 0.0D);
         }
-        Vec3 d = look.subtract(pos);
-        float yaw = (float) Math.toDegrees(Math.atan2(-d.x, d.z));
-        float pitch = (float) -Math.toDegrees(Math.atan2(d.y, Math.sqrt(d.x * d.x + d.z * d.z)));
+        Vec3 dv = look.subtract(pos);
+        float yaw = (float) Math.toDegrees(Math.atan2(-dv.x, dv.z));
+        float pitch = (float) -Math.toDegrees(Math.atan2(dv.y, Math.sqrt(dv.x * dv.x + dv.z * dv.z)));
+        boolean cut = l.t == 0 || l.t == Ger.T_DEATHS;
         camera.setPos(pos.x, pos.y, pos.z);
         camera.setYRot(yaw);
         camera.setXRot(pitch);
+        if (cut) {
+            camera.xo = pos.x;
+            camera.yo = pos.y;
+            camera.zo = pos.z;
+            camera.yRotO = yaw;
+            camera.xRotO = pitch;
+        }
+    }
+
+    /**
+     * The other world: a rainbow cosmos all around the camera (it hides the real world entirely), and the mob - with
+     * its endless line of copies - drawn on the stage up in it.
+     */
+    @SubscribeEvent
+    public static void onRenderStage(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
+        if (cine == null || camera == null) return;
+        if (event.getStage() != net.neoforged.neoforge.client.event.RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
+        Minecraft mc = Minecraft.getInstance();
+        float partial = event.getPartialTick().getGameTimeDeltaPartialTick(true);
+        Vec3 cam = event.getCamera().getPosition();
+        MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
+        PoseStack ps = new PoseStack();
+        drawCosmos(ps, buffers, cine.t + partial);
+        buffers.endBatch(RenderType.endPortal());
+        drawRainbow(ps, buffers, cine.t + partial);
+        buffers.endBatch(ModRenderTypes.glow());
+        Entity mob = mc.level.getEntity(cine.mobId);
+        if (mob != null) {
+            Vec3 at = onStage(new Vec3(Mth.lerp(partial, mob.xo, mob.getX()), Mth.lerp(partial, mob.yo, mob.getY()), Mth.lerp(partial, mob.zo, mob.getZ())));
+            onStage = true;
+            try {
+                mc.getEntityRenderDispatcher().render(mob, at.x - cam.x, at.y - cam.y, at.z - cam.z,
+                        Mth.rotLerp(partial, mob.yRotO, mob.getYRot()), partial, ps, buffers, net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);
+            } catch (RuntimeException ignored) {
+                // never crash the cutscene over a model
+            } finally {
+                onStage = false;
+            }
+            buffers.endBatch();
+        }
+    }
+
+    /** All around the camera: the End portal's shifting, colourful starfield - a world that isn't this one. */
+    private static void drawCosmos(PoseStack ps, MultiBufferSource buffers, float t) {
+        VertexConsumer vc = buffers.getBuffer(RenderType.endPortal());
+        org.joml.Matrix4f m = ps.last().pose();
+        final float r = 80.0F;
+        final int lat = 12, lon = 24;
+        for (int i = 0; i < lat; i++) {
+            float p0 = Mth.PI * (i / (float) lat - 0.5F), p1 = Mth.PI * ((i + 1) / (float) lat - 0.5F);
+            for (int j = 0; j < lon; j++) {
+                float a0 = Mth.TWO_PI * j / lon, a1 = Mth.TWO_PI * (j + 1) / lon;
+                float[][] q = {sph(r, p0, a0), sph(r, p0, a1), sph(r, p1, a1), sph(r, p1, a0)};
+                // Both windings, so it shows from the inside whichever way it's culled.
+                for (int k = 0; k < 4; k++) vc.addVertex(m, q[k][0], q[k][1], q[k][2]);
+                for (int k = 3; k >= 0; k--) vc.addVertex(m, q[k][0], q[k][1], q[k][2]);
+            }
+        }
+    }
+
+    /**
+     * Over the starfield: great soft bands of rainbow light washing slowly across the whole sky (added on as light,
+     * so the stars still shine through).
+     */
+    private static void drawRainbow(PoseStack ps, MultiBufferSource buffers, float t) {
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        org.joml.Matrix4f m = ps.last().pose();
+        final float r = 76.0F;
+        final int lat = 16, lon = 32;
+        for (int i = 0; i < lat; i++) {
+            float p0 = Mth.PI * (i / (float) lat - 0.5F), p1 = Mth.PI * ((i + 1) / (float) lat - 0.5F);
+            for (int j = 0; j < lon; j++) {
+                float a0 = Mth.TWO_PI * j / lon, a1 = Mth.TWO_PI * (j + 1) / lon;
+                float[][] q = {sph(r, p0, a0), sph(r, p0, a1), sph(r, p1, a1), sph(r, p1, a0)};
+                float[][] pa = {{p0, a0}, {p0, a1}, {p1, a1}, {p1, a0}};
+                int[] cols = new int[4];
+                for (int k = 0; k < 4; k++) cols[k] = rainbow(pa[k][0], pa[k][1], t);
+                for (int k = 0; k < 4; k++) vc.addVertex(m, q[k][0], q[k][1], q[k][2]).setColor(cols[k]);
+                for (int k = 3; k >= 0; k--) vc.addVertex(m, q[k][0], q[k][1], q[k][2]).setColor(cols[k]);
+            }
+        }
+    }
+
+    /** Smoothly wrapping rainbow (no seam): the hue swirls with direction and time. */
+    private static int rainbow(float pitch, float yaw, float t) {
+        float hue = 0.5F + 0.25F * Mth.sin(yaw * 2.0F + t * 0.025F) + 0.25F * Mth.sin(pitch * 3.0F - yaw + t * 0.017F);
+        float band = 0.5F + 0.5F * Mth.sin(yaw * 3.0F + pitch * 4.0F + t * 0.04F);
+        int rgb = java.awt.Color.HSBtoRGB(hue + t * 0.002F, 0.85F, 1.0F);
+        int a = (int) (60 + 90 * band);
+        return (a << 24) | (rgb & 0xFFFFFF);
+    }
+
+    /** Every tick of the cutscene: soft smoke clouds drifting past, rainbow motes and sparkles floating around the stage. */
+    private static void magic(Minecraft mc, Loop l) {
+        Entity mob = mc.level.getEntity(l.mobId);
+        Vec3 c = onStage(mob == null ? l.origin : mob.position()).add(0.0D, 1.0D, 0.0D);
+        var rnd = mc.level.random;
+        for (int i = 0; i < 3; i++) {
+            double x = c.x + (rnd.nextDouble() - 0.5D) * 26.0D, y = c.y + (rnd.nextDouble() - 0.6D) * 10.0D, z = c.z + (rnd.nextDouble() - 0.5D) * 26.0D;
+            mc.level.addParticle(net.minecraft.core.particles.ParticleTypes.CAMPFIRE_COSY_SMOKE, true, x, y, z,
+                    (rnd.nextDouble() - 0.5D) * 0.02D, 0.01D, (rnd.nextDouble() - 0.5D) * 0.02D);
+        }
+        for (int i = 0; i < 4; i++) {
+            int rgb = java.awt.Color.HSBtoRGB(rnd.nextFloat(), 0.7F, 1.0F);
+            var dust = new net.minecraft.core.particles.DustParticleOptions(new org.joml.Vector3f(((rgb >> 16) & 255) / 255.0F,
+                    ((rgb >> 8) & 255) / 255.0F, (rgb & 255) / 255.0F), 2.5F);
+            mc.level.addParticle(dust, true, c.x + (rnd.nextDouble() - 0.5D) * 14.0D, c.y + (rnd.nextDouble() - 0.5D) * 6.0D,
+                    c.z + (rnd.nextDouble() - 0.5D) * 14.0D, 0.0D, 0.0D, 0.0D);
+        }
+        if (l.t % 2 == 0) {
+            mc.level.addParticle(net.minecraft.core.particles.ParticleTypes.END_ROD, true, c.x + (rnd.nextDouble() - 0.5D) * 12.0D,
+                    c.y + (rnd.nextDouble() - 0.5D) * 5.0D, c.z + (rnd.nextDouble() - 0.5D) * 12.0D, 0.0D, 0.01D, 0.0D);
+        }
+    }
+
+    private static float[] sph(float r, float pitch, float yaw) {
+        return new float[]{Mth.cos(pitch) * Mth.cos(yaw) * r, Mth.sin(pitch) * r, Mth.cos(pitch) * Mth.sin(yaw) * r};
+    }
+
+    /** No hands floating in the cutscene. */
+    @SubscribeEvent
+    public static void onHand(net.neoforged.neoforge.client.event.RenderHandEvent event) {
+        if (cine != null) event.setCanceled(true);
     }
 
     /** Your controls are frozen while it plays. */
@@ -170,6 +330,8 @@ public final class GerCutscene {
         event.getInput().jumping = false;
         event.getInput().shiftKeyDown = false;
         event.getInput().up = event.getInput().down = event.getInput().left = event.getInput().right = false;
+        Minecraft.getInstance().options.keyUp.setDown(false);
+        Minecraft.getInstance().options.keySprint.setDown(false);
     }
 
     /** No HUD in the cutscene... */
@@ -232,10 +394,13 @@ public final class GerCutscene {
         ps.pushPose();
         float tip = tipAngle(l, tt);
         if (tip > 0.0F) ps.mulPose(Axis.ZP.rotationDegrees(tip));
-        SAVED_HEAD.put(e, new float[]{e.yHeadRot, e.yHeadRotO});
-        float turn = lookBack(tt, 0);
-        e.yHeadRot = e.yBodyRot + turn;
-        e.yHeadRotO = e.yBodyRotO + turn;
+        // It turns its whole body to look behind it (twisting just the head looked broken).
+        SAVED_HEAD.put(e, new float[]{e.yHeadRot, e.yHeadRotO, e.yBodyRot, e.yBodyRotO});
+        float turn = lookBack(tt, 0) * 0.55F;
+        e.yBodyRot += turn;
+        e.yBodyRotO += turn;
+        e.yHeadRot = e.yBodyRot + lookBack(tt, 0) * 0.45F;
+        e.yHeadRotO = e.yBodyRotO + lookBack(tt, 0) * 0.45F;
     }
 
     @SubscribeEvent
@@ -249,23 +414,36 @@ public final class GerCutscene {
         ps.popPose();
         float tt = l.t + event.getPartialTick();
         // The copies: a line of see-through echoes stretching out behind it.
-        float show = Mth.clamp((tt - Ger.T_REWIND) / 10.0F, 0.0F, 1.0F) * Mth.clamp((Ger.T_END - tt) / 6.0F, 0.0F, 1.0F);
+        float show = Mth.clamp((tt - (onStage ? 2.0F : Ger.T_REWIND)) / 10.0F, 0.0F, 1.0F) * Mth.clamp((Ger.T_END - tt) / 6.0F, 0.0F, 1.0F);
         Minecraft mc = Minecraft.getInstance();
         Entity owner = mc.level == null ? null : mc.level.getEntity(l.ownerId);
         if (show > 0.01F && owner != null) {
             Vec3 back = l.origin.subtract(owner.position()).multiply(1.0D, 0.0D, 1.0D);
             back = back.lengthSqr() < 1.0E-4D ? new Vec3(1.0D, 0.0D, 0.0D) : back.normalize();
-            double spacing = Math.max(0.9D, e.getBbWidth() * 1.3D);
+            double spacing = Math.max(0.9D, e.getBbWidth() * 1.25D);
+            Vec3 side = new Vec3(-back.z, 0.0D, back.x);
+            float[] saved = SAVED_HEAD.get(e);
             ResourceLocation tex = event.getRenderer().getTextureLocation(e);
             ghosting = true;
             try {
-                for (int i = 1; i <= COPIES; i++) {
+                int count = onStage ? STAGE_COPIES : COPIES;
+                for (int i = 1; i <= count; i++) {
+                    // A curving trail: each copy further back swings a little more to the side and rises a touch,
+                    // like the line bends back through time.
+                    double along = spacing * i;
+                    double bend = onStage ? 0.0D : 0.11D * i * i * spacing;
+                    double rise = onStage ? 0.0D : 0.03D * i * i;
+                    float curveYaw = onStage ? 0.0F : (float) Math.toDegrees(Math.atan2(0.22D * i, 1.0D)); // faces along the curve
                     float turn = lookBack(tt, i);
-                    e.yHeadRot = e.yBodyRot + turn;
-                    e.yHeadRotO = e.yBodyRotO + turn;
-                    float alpha = show * (0.5F - i * 0.07F);
+                    float baseBody = saved != null ? saved[2] : e.yBodyRot;
+                    float baseBodyO = saved != null ? saved[3] : e.yBodyRotO;
+                    e.yBodyRot = baseBody + curveYaw + turn * 0.55F;
+                    e.yBodyRotO = baseBodyO + curveYaw + turn * 0.55F;
+                    e.yHeadRot = e.yBodyRot + turn * 0.45F;
+                    e.yHeadRotO = e.yBodyRotO + turn * 0.45F;
+                    float alpha = onStage ? show * Math.max(0.15F, 0.95F - i * 0.045F) : show * (0.55F - i * 0.065F);
                     ps.pushPose();
-                    ps.translate(back.x * spacing * i, 0.0D, back.z * spacing * i);
+                    ps.translate(back.x * along + side.x * bend, rise, back.z * along + side.z * bend);
                     event.getRenderer().render(e, Mth.rotLerp(event.getPartialTick(), e.yRotO, e.getYRot()), event.getPartialTick(), ps,
                             ghost(event.getMultiBufferSource(), tex, alpha), event.getPackedLight());
                     ps.popPose();
@@ -280,6 +458,8 @@ public final class GerCutscene {
         if (h != null) {
             e.yHeadRot = h[0];
             e.yHeadRotO = h[1];
+            e.yBodyRot = h[2];
+            e.yBodyRotO = h[3];
         }
     }
 

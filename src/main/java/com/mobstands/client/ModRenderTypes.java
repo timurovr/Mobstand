@@ -26,4 +26,16 @@ public final class ModRenderTypes extends RenderType {
     public static RenderType glow() {
         return GLOW;
     }
+
+    /** Return to Zero's cosmos: solid colour, seen from inside, hiding everything beyond it. */
+    private static final RenderType COSMOS = create("mobstands_cosmos", DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.QUADS,
+            262144, false, false, CompositeState.builder()
+                    .setShaderState(POSITION_COLOR_SHADER)
+                    .setCullState(NO_CULL)
+                    .setWriteMaskState(COLOR_DEPTH_WRITE)
+                    .createCompositeState(false));
+
+    public static RenderType cosmos() {
+        return COSMOS;
+    }
 }

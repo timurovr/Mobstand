@@ -25,12 +25,29 @@ public final class StandCombat {
     }
 
     /** Damage is attributed to the owner, so kills give loot, XP and credit. */
+    /** Who last hurt each mob with a Stand ability, and when - so kills by rain, bleed, fire or falls still count. */
+    private static final java.util.Map<java.util.UUID, Object[]> CREDIT = new java.util.HashMap<>();
+
+    public static void credit(ServerPlayer owner, LivingEntity target) {
+        CREDIT.put(target.getUUID(), new Object[]{owner.getUUID(), owner.level().getGameTime()});
+        if (CREDIT.size() > 512) CREDIT.clear();
+    }
+
+    /** The player whose Stand hurt this mob in the last 10 seconds (null if nobody). */
+    public static ServerPlayer creditFor(LivingEntity victim) {
+        Object[] c = CREDIT.remove(victim.getUUID());
+        if (c == null || victim.level().getGameTime() - (Long) c[1] > 200L || victim.getServer() == null) return null;
+        return victim.getServer().getPlayerList().getPlayer((java.util.UUID) c[0]);
+    }
+
     public static boolean hurt(ServerPlayer owner, LivingEntity target, float amount) {
+        credit(owner, target);
         DamageSource src = owner.level().damageSources().playerAttack(owner);
         return target.hurt(src, amount);
     }
 
     public static boolean hurtSonic(ServerPlayer owner, LivingEntity target, float amount) {
+        credit(owner, target);
         DamageSource src = owner.level().damageSources().sonicBoom(owner);
         return target.hurt(src, amount);
     }

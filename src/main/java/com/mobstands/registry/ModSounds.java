@@ -30,6 +30,10 @@ public final class ModSounds {
     public static final DeferredHolder<SoundEvent, SoundEvent> SPIN_CRACKLE = register("stand.spin_crackle");
     public static final DeferredHolder<SoundEvent, SoundEvent> TIME_STOP = register("stand.time_stop");
     public static final DeferredHolder<SoundEvent, SoundEvent> MANDOM = register("stand.mandom");
+    /** Lazarus Smile's Lazarus: the dead get back up. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> LAZARUS = register("stand.lazarus");
+    /** GER: Return to Zero. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> GER_RETURN_TO_ZERO = register("ger.return_to_zero");
 
     private static DeferredHolder<SoundEvent, SoundEvent> register(String name) {
         return SOUNDS.register(name, () -> SoundEvent.createVariableRangeEvent(MobStands.id(name)));

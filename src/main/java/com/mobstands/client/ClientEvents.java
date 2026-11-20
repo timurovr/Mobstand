@@ -43,7 +43,7 @@ public final class ClientEvents {
                 net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, mc.player));
         double maxD = wall.getType() == HitResult.Type.MISS ? 64.0D : wall.getLocation().distanceTo(eye) + 1.0D;
         for (com.mobstands.entity.SpinItemEntity si : mc.level.getEntitiesOfClass(com.mobstands.entity.SpinItemEntity.class,
-                mc.player.getBoundingBox().inflate(64.0D), e -> true)) {
+                mc.player.getBoundingBox().inflate(64.0D), e -> e.isSteel())) {
             net.minecraft.world.phys.AABB box = si.getBoundingBox().inflate(0.5D);
             var hit = box.clip(eye, end);
             if (hit.isEmpty()) continue;
@@ -163,6 +163,10 @@ public final class ClientEvents {
         Minecraft mc = Minecraft.getInstance();
         TimeStopFx.tick(mc);
         if (mc.player == null) return;
+        // Brought back by Bites the Dust while on the death screen: close it.
+        if (mc.screen instanceof net.minecraft.client.gui.screens.DeathScreen && mc.player.isAlive() && mc.player.getHealth() > 0.0F) {
+            mc.setScreen(null);
+        }
         boolean open = mc.screen == null;
 
         while (StandKeys.SUMMON.consumeClick()) {
@@ -172,11 +176,22 @@ public final class ClientEvents {
             if (open && basicAllowed(mc)) send(1);
         }
         while (StandKeys.ABILITY1.consumeClick()) {
-            if (open) send(2);
+            if (ClashClient.active()) ClashClient.press(); // Barrage Clash: mash it!
+            else if (open) send(2);
         }
         boolean allay = ClientStandCache.get().getType() == com.mobstands.stand.StandType.ALLAY;
+        boolean cmoon = ClientStandCache.get().getType() == com.mobstands.stand.StandType.SHULKER;
         while (StandKeys.ABILITY2.consumeClick()) {
-            if (open && !allay) send(3);
+            if (!open || allay) continue;
+            if (cmoon) {
+                // C-Moon: hold X to open the Gravity Punch wheel (if it's ready and your Shulker is out).
+                var d = ClientStandCache.get();
+                if (d.isSummoned() && mc.level != null && d.cooldownRemaining(2, mc.level.getGameTime()) <= 0) {
+                    mc.setScreen(new GravityPickScreen());
+                }
+            } else {
+                send(3);
+            }
         }
         if (allay) {
             // Allay: tap X = Allay Hold (grab the enemy you're looking at); hold X = let go.
@@ -194,10 +209,19 @@ public final class ClientEvents {
             }
         }
         while (StandKeys.ULTIMATE.consumeClick()) {
-            if (open) send(4);
+            if (!open) continue;
+            if (cmoon) {
+                // C-Moon: hold C for the Gravity Turn wheel - let go on an arrow and your own gravity turns that way.
+                if (ClientStandCache.get().isSummoned()) mc.setScreen(new GravityPickScreen(true));
+            } else {
+                send(4);
+            }
         }
         while (StandKeys.ABILITY4.consumeClick()) {
             if (open) send(24); // the 5th ability
+        }
+        while (StandKeys.ABILITY5.consumeClick()) {
+            if (open) send(25); // the 6th ability
         }
         while (StandKeys.POSE.consumeClick()) {
             if (open) send(5);
@@ -220,7 +244,7 @@ public final class ClientEvents {
         Minecraft mc = Minecraft.getInstance();
         RushFx.preTick();
         if (mc.player == null || mc.screen != null) return;
-        if (!ClientStandCache.get().spinLearned) return;
+        if (!ClientStandCache.get().canSpin()) return;
         if ((mc.player.getMainHandItem().isEmpty() && mc.player.getOffhandItem().isEmpty()) || mc.player.isSpectator()) return;
         while (mc.options.keyDrop.consumeClick()) {
             // Spin users: Q presses are handled by SpinInput (tap = drop, hold = wind up the spin).

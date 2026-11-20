@@ -31,6 +31,7 @@ public final class StandEvents {
         if (event.getEntity() instanceof ServerPlayer p) {
             StandManager.data(p).activeStand = null;
             StandManager.sync(p); // the Stand entity itself is re-created by StandManager.tick
+            com.mobstands.stand.GravityFlip.onLogin(p);
         }
     }
 
@@ -62,6 +63,8 @@ public final class StandEvents {
             com.mobstands.stand.DreamWalk.tick(p);
             com.mobstands.stand.RequiemTrials.tick(p);
             com.mobstands.stand.Sniff.tick(p);
+            com.mobstands.stand.GravityFlip.checkOwner(p);
+            com.mobstands.stand.RainPowers.playerTick(p);
         }
     }
 
@@ -69,15 +72,24 @@ public final class StandEvents {
     public static void onServerTick(ServerTickEvent.Post event) {
         TickScheduler.tick();
         com.mobstands.stand.SoulControl.tick(event.getServer());
+        com.mobstands.stand.OtherWorld.tick(event.getServer());
+        com.mobstands.stand.GravityFlip.tick(event.getServer());
+        com.mobstands.stand.Calamity.tick(event.getServer());
+        com.mobstands.stand.Clash.tick(event.getServer());
         for (net.minecraft.server.level.ServerLevel l : event.getServer().getAllLevels()) {
             StandManager.twirlTick(l);
             com.mobstands.stand.TimeStop.tick(l);
             com.mobstands.stand.AxolotlPowers.tick(l);
+            com.mobstands.stand.CreeperRequiem.tick(l);
+            com.mobstands.stand.Plunder.tick(l);
+            com.mobstands.stand.PropertySwap.tick(l);
             com.mobstands.stand.Mandom.tick(l);
             com.mobstands.stand.HeartAttack.tick(l);
             com.mobstands.stand.HorseSpin.tick(l);
             com.mobstands.stand.Ger.tick(l);
             com.mobstands.stand.SoundSteal.tick(l);
+            com.mobstands.stand.RainPowers.tick(l);
+            com.mobstands.stand.NullBubble.tick(l);
         }
     }
 
@@ -114,7 +126,14 @@ public final class StandEvents {
      */
     @SubscribeEvent
     public static void onProjectileImpact(net.neoforged.neoforge.event.entity.ProjectileImpactEvent event) {
-        if (event.getProjectile().level().isClientSide || !event.getProjectile().getTags().contains(StandManager.AERO_TAG)) return;
+        if (event.getProjectile().level().isClientSide) return;
+        // Wonder of Deep's Misdirection: it misses.
+        if (event.getRayTraceResult() instanceof net.minecraft.world.phys.EntityHitResult mh
+                && com.mobstands.stand.Calamity.onProjectileHit(event.getProjectile(), mh.getEntity())) {
+            event.setCanceled(true);
+            return;
+        }
+        if (!event.getProjectile().getTags().contains(StandManager.AERO_TAG)) return;
         if (event.getRayTraceResult() instanceof net.minecraft.world.phys.EntityHitResult eh) {
             eh.getEntity().invulnerableTime = 0;
         } else {
@@ -131,14 +150,30 @@ public final class StandEvents {
     public static void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
         com.mobstands.stand.HorseSpin.shutdown();
         com.mobstands.stand.SoulControl.shutdown();
+        com.mobstands.stand.OtherWorld.shutdown();
+        com.mobstands.stand.GravityFlip.shutdown();
+        com.mobstands.stand.RainPowers.shutdown();
+        com.mobstands.stand.Calamity.shutdown();
+        com.mobstands.stand.NullBubble.clear();
+    }
+
+    /** C-Moon: someone new sees a creature whose gravity is turned. */
+    @SubscribeEvent
+    public static void onStartTracking(PlayerEvent.StartTracking event) {
+        if (event.getEntity() instanceof ServerPlayer viewer) com.mobstands.stand.GravityFlip.onStartTracking(viewer, event.getTarget());
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         TickScheduler.clear();
+        com.mobstands.stand.CreeperRequiem.clear();
+        com.mobstands.stand.Plunder.clear();
+        com.mobstands.stand.PropertySwap.clear();
         com.mobstands.stand.TimeStop.clear();
         com.mobstands.stand.AxolotlPowers.clear();
         com.mobstands.stand.Mandom.clear();
+        com.mobstands.stand.Lazarus.clear();
+        com.mobstands.stand.Clash.clear();
         com.mobstands.stand.HeartAttack.clear();
         com.mobstands.stand.HorseSpin.clear();
         com.mobstands.stand.Ger.clear();
@@ -150,6 +185,9 @@ public final class StandEvents {
         LivingEntity victim = event.getEntity();
         if (!victim.level().isClientSide) com.mobstands.stand.DreamWalk.onDeath(victim, event.getSource().getEntity());
         com.mobstands.stand.Mandom.onDeath(victim);
+        com.mobstands.stand.Lazarus.onDeath(victim);
+        if (!victim.level().isClientSide) com.mobstands.stand.GravityFlip.onDeath(victim);
+        if (!victim.level().isClientSide) com.mobstands.stand.Calamity.onDeath(victim);
         com.mobstands.stand.RequiemTrials.onDeath(victim);
         if (victim instanceof net.minecraft.world.entity.monster.Evoker || victim instanceof net.minecraft.world.entity.monster.Vindicator) {
             StandManager.pillagerDied((net.minecraft.world.entity.Mob) victim, event.getSource());
@@ -157,10 +195,17 @@ public final class StandEvents {
         if (victim instanceof ServerPlayer p) {
             StandManager.removeEntity(p); // Stand data survives death (copyOnDeath); the entity is re-created on respawn
         }
-        if (event.getSource().getEntity() instanceof ServerPlayer killer && killer != victim) {
+        // Stand XP for the kill - also when an ability finished it off indirectly (rain, drowning, fire, a fall, a
+        // possessed mob, an explosion...): whoever's Stand last hurt it in the past 10 seconds gets the credit.
+        ServerPlayer killer = event.getSource().getEntity() instanceof ServerPlayer sp ? sp : null;
+        ServerPlayer credited = victim.level().isClientSide ? null : com.mobstands.stand.StandCombat.creditFor(victim);
+        if (killer == null) killer = credited;
+        if (killer != null && killer != victim) {
             StandData d = StandManager.data(killer);
             if (d.getType() != null && d.isSummoned() && (victim instanceof Mob || victim instanceof Player)) {
-                int xp = Math.max(2, Math.min(40, (int) (victim.getMaxHealth() / 3.0F)));
+                int xp = Math.max(3, Math.min(50, (int) (victim.getMaxHealth() / 2.5F)));
+                // Killed by your Stand's abilities (rain, slams, punches...) rather than your own weapon: double XP.
+                if (credited == killer) xp *= 2;
                 StandManager.addXp(killer, xp);
             }
         }
@@ -177,6 +222,25 @@ public final class StandEvents {
 
     @SubscribeEvent
     public static void onIncomingDamage(LivingIncomingDamageEvent event) {
+        if (event.getEntity() instanceof ServerPlayer hurtP) com.mobstands.stand.CreeperRequiem.onOwnerHurt(hurtP, event.getSource());
+        // Wonder of Deep: hurting its user makes the universe take note; its user striking ends Unseen Presence.
+        if (!event.getEntity().level().isClientSide) {
+            if (event.getEntity() instanceof ServerPlayer wr && com.mobstands.stand.Calamity.isUser(wr)) {
+                com.mobstands.stand.Calamity.onUserHurt(wr, event.getSource().getEntity());
+                // ...and whoever struck it is struck instead.
+                if (com.mobstands.stand.Calamity.reflect(wr, event.getSource(), event.getAmount())) {
+                    event.setCanceled(true);
+                    return;
+                }
+            }
+            if (event.getSource().getEntity() instanceof ServerPlayer atk && com.mobstands.stand.Calamity.isUser(atk))
+                com.mobstands.stand.Calamity.onUserAttacks(atk);
+        }
+        // Catch the Rainbow: in the rain, the hit passes through a body of raindrops.
+        if (!event.getEntity().level().isClientSide && com.mobstands.stand.RainPowers.dodge(event.getEntity(), event.getSource())) {
+            event.setCanceled(true);
+            return;
+        }
         // GER: Return to Zero, the Golden Barrier, and mobs caught in the loop.
         if (com.mobstands.stand.Ger.onHurt(event.getEntity(), event.getSource())) {
             event.setCanceled(true);
@@ -205,7 +269,7 @@ public final class StandEvents {
         }
         if (event.getEntity() instanceof ServerPlayer p
                 && event.getSource().is(DamageTypeTags.IS_EXPLOSION)
-                && StandPassives.active(p, StandType.CREEPER)) {
+                && (StandPassives.active(p, StandType.CREEPER) || StandPassives.active(p, StandType.CREEPER_REQUIEM))) {
             event.setAmount(event.getAmount() * 0.4F);
         }
     }
@@ -246,6 +310,11 @@ public final class StandEvents {
         if (e.level().isClientSide) return;
         if (e instanceof ServerPlayer p) {
             StandManager.pigStruck(p);
+            com.mobstands.stand.CreeperRequiem.struck(p);
+        } else if (e instanceof com.mobstands.entity.StandEntity cs && cs.getStandType() == com.mobstands.stand.StandType.CREEPER
+                && cs.getOwnerPlayer() instanceof ServerPlayer cOwner) {
+            event.setCanceled(true); // a charged creeper - the lightning feeds it
+            com.mobstands.stand.CreeperRequiem.struck(cOwner);
         } else if (e instanceof com.mobstands.entity.StandEntity s && s.getStandType() == com.mobstands.stand.StandType.PIG
                 && s.getOwnerPlayer() instanceof ServerPlayer owner) {
             event.setCanceled(true); // the pig itself doesn't burn
@@ -260,6 +329,9 @@ public final class StandEvents {
                 && (StandManager.isDistracted(event.getEntity()) || StandManager.isSpinConfused(event.getEntity())
                 || com.mobstands.stand.AxolotlPowers.isBubbled(event.getEntity()))) event.setCanceled(true);
         else if (StandManager.misfireBlocksTarget(event.getEntity(), event.getNewAboutToBeSetTarget())) event.setCanceled(true);
+        else if (event.getNewAboutToBeSetTarget() != null && com.mobstands.stand.Plunder.blind(event.getEntity())) event.setCanceled(true);
+        else if (event.getNewAboutToBeSetTarget() != null && com.mobstands.stand.Ger.stunned(event.getEntity())) event.setCanceled(true);
+        else if (com.mobstands.stand.Calamity.onChangeTarget(event.getEntity(), event.getNewAboutToBeSetTarget())) event.setCanceled(true);
     }
 
     /** A spinning item picked up off the floor stops spinning (and stacks normally again). */
@@ -302,11 +374,22 @@ public final class StandEvents {
     }
 
     /** Chests that can (very rarely) hold a Stand Arrow: most dungeons and structures. */
+    /** Spin Scrolls: jungles, snow, the sea and the road. */
+    private static final java.util.Map<String, Float> SCROLL_CHESTS = java.util.Map.ofEntries(
+            java.util.Map.entry("chests/jungle_temple", 0.12F),
+            java.util.Map.entry("chests/igloo_chest", 0.12F),
+            java.util.Map.entry("chests/shipwreck_treasure", 0.08F),
+            java.util.Map.entry("chests/buried_treasure", 0.10F),
+            java.util.Map.entry("chests/underwater_ruin_big", 0.08F),
+            java.util.Map.entry("chests/village/village_taiga_house", 0.04F),
+            java.util.Map.entry("chests/village/village_snowy_house", 0.04F),
+            java.util.Map.entry("chests/woodland_mansion", 0.06F));
+
+    /** Echoing Arrows: deserts, the dark underground, and the Nether and the End. */
     private static final java.util.Map<String, Float> ARROW_CHESTS = java.util.Map.ofEntries(
             java.util.Map.entry("chests/simple_dungeon", 0.05F),
             java.util.Map.entry("chests/abandoned_mineshaft", 0.03F),
-            java.util.Map.entry("chests/desert_pyramid", 0.04F),
-            java.util.Map.entry("chests/jungle_temple", 0.05F),
+            java.util.Map.entry("chests/desert_pyramid", 0.20F), // the hot, dry desert: where Stand arrows turn up
             java.util.Map.entry("chests/stronghold_corridor", 0.04F),
             java.util.Map.entry("chests/stronghold_library", 0.05F),
             java.util.Map.entry("chests/woodland_mansion", 0.06F),
@@ -315,16 +398,23 @@ public final class StandEvents {
             java.util.Map.entry("chests/nether_bridge", 0.04F),
             java.util.Map.entry("chests/bastion_treasure", 0.06F),
             java.util.Map.entry("chests/end_city_treasure", 0.05F),
-            java.util.Map.entry("chests/buried_treasure", 0.04F),
-            java.util.Map.entry("chests/shipwreck_treasure", 0.03F),
-            java.util.Map.entry("chests/ruined_portal", 0.03F),
-            java.util.Map.entry("chests/igloo_chest", 0.04F),
             java.util.Map.entry("chests/trial_chambers/reward_rare", 0.05F));
 
     @SubscribeEvent
     public static void onLootLoad(net.neoforged.neoforge.event.LootTableLoadEvent event) {
         net.minecraft.resources.ResourceLocation id = event.getName();
         if (!"minecraft".equals(id.getNamespace())) return;
+        // The Spin comes from the opposite kind of place to the Stands: the green, wet, cold, open world - jungles,
+        // snow, the sea and the road. Rarely, and one scroll at a time. (Woodland mansions have both.)
+        Float scroll = SCROLL_CHESTS.get(id.getPath());
+        if (scroll != null) {
+            event.getTable().addPool(net.minecraft.world.level.storage.loot.LootPool.lootPool()
+                    .name("mobstands:spin_scroll")
+                    .setRolls(net.minecraft.world.level.storage.loot.providers.number.ConstantValue.exactly(1.0F))
+                    .add(net.minecraft.world.level.storage.loot.entries.LootItem.lootTableItem(com.mobstands.registry.ModItems.SPIN_SCROLL.get()))
+                    .when(net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition.randomChance(scroll))
+                    .build());
+        }
         Float chance = ARROW_CHESTS.get(id.getPath());
         if (chance == null) return;
         event.getTable().addPool(net.minecraft.world.level.storage.loot.LootPool.lootPool()
@@ -338,6 +428,15 @@ public final class StandEvents {
     // ---- Neoteny (Mandom) remembers block changes near Axolotl users, so they can be undone ----
 
     @SubscribeEvent
+    public static void onUseBlock(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock event) {
+        net.minecraft.world.level.Level l = event.getLevel();
+        if (l.isClientSide) return;
+        if (l.getBlockEntity(event.getPos()) instanceof net.minecraft.world.Container) {
+            com.mobstands.stand.Mandom.onBlockChange(l, event.getPos(), l.getBlockState(event.getPos()));
+        }
+    }
+
+    @SubscribeEvent
     public static void onBreak(net.neoforged.neoforge.event.level.BlockEvent.BreakEvent event) {
         if (event.getLevel() instanceof net.minecraft.world.level.Level l) com.mobstands.stand.Mandom.onBlockChange(l, event.getPos(), event.getState());
     }
@@ -347,6 +446,21 @@ public final class StandEvents {
         if (event.getLevel() instanceof net.minecraft.world.level.Level l) {
             com.mobstands.stand.Mandom.onBlockChange(l, event.getPos(), event.getBlockSnapshot().getState());
         }
+    }
+
+    /** Bites the Dust: anything leaving the world for good is remembered, so a rewind can bring it back. */
+    @SubscribeEvent
+    public static void onLeaveLevel(net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent event) {
+        var reason = event.getEntity().getRemovalReason();
+        if (reason == net.minecraft.world.entity.Entity.RemovalReason.KILLED || reason == net.minecraft.world.entity.Entity.RemovalReason.DISCARDED) {
+            com.mobstands.stand.Mandom.onVanish(event.getEntity());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onExplodeStart(net.neoforged.neoforge.event.level.ExplosionEvent.Start event) {
+        // Pigstep stole this creeper's Volatility: even lit with flint and steel, it just fizzles.
+        if (com.mobstands.stand.PropertySwap.defused(event.getExplosion().getDirectSourceEntity())) event.setCanceled(true);
     }
 
     @SubscribeEvent

@@ -46,6 +46,46 @@ import java.util.UUID;
  * </ul>
  */
 public final class Ger {
+    /** Stunned by a GER blow: until when (game time). */
+    private static final java.util.Map<java.util.UUID, Long> STUNNED = new java.util.HashMap<>();
+    public static final int STUN_TICKS = 30;
+
+    /**
+     * A GER blow: the enemy's senses are overloaded - it freezes up for a moment (can't move, can't fight back,
+     * forgets what it was doing), with golden sparks over its head. Bosses shrug it off.
+     */
+    public static void stun(net.minecraft.world.entity.LivingEntity t) {
+        if (t.level().isClientSide || !t.isAlive() || t instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon
+                || t instanceof net.minecraft.world.entity.boss.wither.WitherBoss) return;
+        long until = t.level().getGameTime() + STUN_TICKS;
+        STUNNED.put(t.getUUID(), until);
+        t.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN, STUN_TICKS, 6, false, false));
+        t.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.WEAKNESS, STUN_TICKS, 4, false, false));
+        if (t instanceof net.minecraft.world.entity.player.Player) {
+            t.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.CONFUSION, 60, 0, false, false));
+            t.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.DIG_SLOWDOWN, STUN_TICKS, 3, false, false));
+        }
+        if (t instanceof net.minecraft.world.entity.Mob m) {
+            m.setTarget(null);
+            m.getNavigation().stop();
+        }
+        if (t.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+            sl.sendParticles(net.minecraft.core.particles.ParticleTypes.WAX_ON, t.getX(), t.getY() + t.getBbHeight() + 0.3D, t.getZ(),
+                    6, 0.25D, 0.1D, 0.25D, 0.0D);
+        }
+    }
+
+    /** Still reeling from a GER blow: can't lock onto anyone. */
+    public static boolean stunned(net.minecraft.world.entity.Entity e) {
+        Long until = STUNNED.get(e.getUUID());
+        if (until == null) return false;
+        if (e.level().getGameTime() >= until) {
+            STUNNED.remove(e.getUUID());
+            return false;
+        }
+        return true;
+    }
+
     private Ger() {}
 
     public static final String LOOP_TAG = "mobstands_ger_loop";
@@ -105,6 +145,8 @@ public final class Ger {
         if (victim.level().isClientSide) return false;
         // Anything already caught in a loop can't be hurt by anything else.
         if (victim.getTags().contains(LOOP_TAG)) return true;
+        // Whoever cast it can't be touched while the loop plays out.
+        if (victim instanceof ServerPlayer caster) for (Loop l : LOOPS) if (l.owner == caster) return true;
         if (protectedByBarrier(victim, src)) return true;
         if (!(victim instanceof ServerPlayer p) || !inStance(p)) return false;
         Entity att = src.getEntity();
