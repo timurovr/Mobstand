@@ -76,7 +76,7 @@ final class StandVisual {
     void hideForGlow(boolean hide) {
         if (glowHidden == null) {
             glowHidden = new java.util.ArrayList<>();
-            if (type == StandType.WARDEN) {
+            if ((type == StandType.WARDEN || type == StandType.WARDEN_REQUIEM)) {
                 ModelPart r = part("bone", "body", "head", "right_tendril");
                 ModelPart l = part("bone", "body", "head", "left_tendril");
                 if (r != null) glowHidden.add(r);
@@ -108,6 +108,8 @@ final class StandVisual {
         return left && leftArm != null ? leftArm : rightArm;
     }
     final ResourceLocation texture;
+    /** Creeper Requiem: the charged-creeper energy shell (null for everyone else). */
+    EntityModel chargeShell;
     final ResourceLocation eyes;
 
     private Entity dummy;
@@ -138,6 +140,15 @@ final class StandVisual {
                 main = new CreeperModel(root);
                 texture = tex("textures/entity/creeper/creeper.png");
             }
+            case CREEPER_REQUIEM -> {
+                // A charged creeper: the vanilla creeper wrapped in its crackling blue energy shell.
+                root = ctx.bakeLayer(ModelLayers.CREEPER);
+                main = new CreeperModel(root);
+                // Teal-tinged skin with blue lightning cracks down its body and legs; its face and the cracks glow.
+                texture = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/creeper_requiem.png");
+                eyesTex = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/creeper_requiem_glow.png");
+                chargeShell = new CreeperModel(ctx.bakeLayer(ModelLayers.CREEPER_ARMOR));
+            }
             case ENDERMAN, ENDER_WORLD -> {
                 root = ctx.bakeLayer(ModelLayers.ENDERMAN);
                 main = new EndermanModel(root);
@@ -154,7 +165,7 @@ final class StandVisual {
                 main = new BlazeModel(root);
                 texture = tex("textures/entity/blaze.png");
             }
-            case WARDEN -> {
+            case WARDEN, WARDEN_REQUIEM -> {
                 root = ctx.bakeLayer(ModelLayers.WARDEN);
                 main = new WardenModel(root);
                 texture = tex("textures/entity/warden/warden.png");
@@ -185,10 +196,12 @@ final class StandVisual {
                 eyesTex = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/ger_glow.png"); // eyes and emeralds glow
             }
             case PIGLIN_REQUIEM -> {
-                // Gilded Silence: a Piglin Brute in amethyst-purple leather, amethyst set into its fists.
+                // Pigstep: a Piglin Brute in amethyst-purple leather, amethyst set into its fists.
                 root = ctx.bakeLayer(ModelLayers.PIGLIN_BRUTE);
                 main = new PiglinModel(root);
                 texture = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/gilded_silence.png");
+                // Amethyst eyes, the gem in its gold circlet, its fists and shoulders glow.
+                eyesTex = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/entity/gilded_silence_glow.png");
             }
             case PIGLIN -> {
                 root = ctx.bakeLayer(ModelLayers.PIGLIN);
@@ -237,6 +250,23 @@ final class StandVisual {
                 main = new net.minecraft.client.model.SnifferModel<>(root);
                 texture = tex("textures/entity/sniffer/sniffer.png");
             }
+            case DOLPHIN -> {
+                root = ctx.bakeLayer(ModelLayers.DOLPHIN);
+                main = new net.minecraft.client.model.DolphinModel(root);
+                texture = tex("textures/entity/dolphin.png");
+            }
+            case SHULKER -> {
+                root = ctx.bakeLayer(ModelLayers.SHULKER);
+                ModelPart sBase = root.getChild("base"), sLid = root.getChild("lid"), sHead = root.getChild("head");
+                // The vanilla model leaves the head to a separate layer: draw it with the shell.
+                main = new net.minecraft.client.model.ShulkerModel(root) {
+                    @Override
+                    public Iterable<ModelPart> parts() {
+                        return com.google.common.collect.ImmutableList.of(sBase, sLid, sHead);
+                    }
+                };
+                texture = tex("textures/entity/shulker/shulker_green.png");
+            }
             case MINECART -> {
                 root = ctx.bakeLayer(ModelLayers.MINECART);
                 main = new net.minecraft.client.model.MinecartModel<>(root);
@@ -250,7 +280,7 @@ final class StandVisual {
         ModelPart armSource = switch (type) {
             case IRON_GOLEM -> ctx.bakeLayer(ModelLayers.IRON_GOLEM);
             case ENDERMAN, ENDER_WORLD -> ctx.bakeLayer(ModelLayers.ENDERMAN);
-            case WARDEN -> ctx.bakeLayer(ModelLayers.WARDEN);
+            case WARDEN, WARDEN_REQUIEM -> ctx.bakeLayer(ModelLayers.WARDEN);
             case BLAZE -> ctx.bakeLayer(ModelLayers.BLAZE);
             case PIGLIN -> ctx.bakeLayer(ModelLayers.PIGLIN);
             case PIGLIN_REQUIEM -> ctx.bakeLayer(ModelLayers.PIGLIN_BRUTE);
@@ -297,6 +327,7 @@ final class StandVisual {
                 if (type == StandType.SKELETON && dummy instanceof Mob mob) {
                     mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
                 }
+                if (type == StandType.DOLPHIN) dummy.setDeltaMovement(0.05D, 0.0D, 0.0D); // so its tail keeps swimming
                 if (type == StandType.ZOMBIFIED_PIGLIN && dummy instanceof Mob mob) {
                     mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.GOLDEN_SWORD)); // its rusty gold sword
                 }
@@ -320,6 +351,7 @@ final class StandVisual {
             // The squid model reads "age" as its tentacle angle: give it a slow, eerie sway instead.
             float animAge = type == StandType.SQUID ? 0.35F + Mth.sin(age * 0.09F) * 0.25F : age;
             main.setupAnim(d, limbSwing, limbAmount, animAge, 0.0F, pitch);
+            if (type == StandType.SHULKER) shulkerPose(progress, age);
             if (outer != null) {
                 outer.prepareMobModel(d, limbSwing, limbAmount, partial);
                 outer.setupAnim(d, limbSwing, limbAmount, age, 0.0F, pitch);
@@ -331,6 +363,19 @@ final class StandVisual {
         boolean meleeAnim = slot == 0 || slot == 1 || slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO;
         if (progress < 0.0F || (meleeAnim && type != StandType.SKELETON)) idlePose(age); // punches blend from the idle pose
         applyArmPose(progress, slot, age);
+    }
+
+    /**
+     * C-Moon: the shell sits a little open with the head peeking out, and pops wide open while it attacks.
+     * (The dummy is never really "peeking", so the lid is placed by hand, the same way vanilla does it.)
+     */
+    private void shulkerPose(float progress, float age) {
+        ModelPart lid = root.getChild("lid"), head = root.getChild("head");
+        float peek = 0.3F + Mth.sin(age * 0.05F) * 0.05F;
+        if (progress >= 0.0F) peek = Math.max(peek, Mth.sin(Mth.clamp(progress * 1.4F, 0.0F, 1.0F) * Mth.PI) * 0.7F + 0.3F);
+        lid.setPos(0.0F, 16.0F + Mth.cos(peek * Mth.PI) * 8.0F, 0.0F);
+        lid.yRot = 0.0F;
+        head.yRot = 0.0F; // faces the way you look (vanilla turns it via the shulker's own odd body rotation)
     }
 
     /**
@@ -430,7 +475,8 @@ final class StandVisual {
             return;
         }
         if (progress < 0.0F || rArm == null) return;
-        if (type == StandType.WARDEN && (slot == 2 || slot == 3)) return; // vanilla Sonic Boom / roar animation
+        if (!StandRenderer.ATTACK_FX) return; // no punching arm moves: the Stand keeps its pose
+        if ((type == StandType.WARDEN || type == StandType.WARDEN_REQUIEM) && (slot == 2 || slot == 3)) return; // vanilla Sonic Boom / roar animation
         if (slot == StandEntity.ANIM_SUMMON_COMBO || slot == StandEntity.ANIM_CHARGED_COMBO) {
             float t = comboElapsed;
             float charge = comboCharge(t, dashTick(slot), hit1Tick(slot));
@@ -473,7 +519,7 @@ final class StandVisual {
             }
             return;
         }
-        if (type == StandType.SKELETON || type == StandType.WARDEN) return; // bow pose / nothing else to do
+        if (type == StandType.SKELETON || (type == StandType.WARDEN || type == StandType.WARDEN_REQUIEM)) return; // bow pose / nothing else to do
         if (type == StandType.ENDER_WORLD && slot == 3) return; // Time Stop: it just stands there - no gesture
         float s = Mth.sin(progress * Mth.PI);
         boolean bothArms = slot > 0 || type == StandType.IRON_GOLEM;
@@ -526,12 +572,14 @@ final class StandVisual {
     private static ModelPart bakeFist(StandType type) {
         int tw = 64, th = 32, u = 0, v = 16;
         switch (type) {
-            case CREEPER -> { u = 16; v = 16; }
+            case CREEPER, CREEPER_REQUIEM -> { u = 16; v = 16; }
             case ENDERMAN, ENDER_WORLD -> { u = 0; v = 16; }
             case IRON_GOLEM -> { tw = 128; th = 128; u = 60; v = 21; }
             case BLAZE -> { u = 0; v = 16; }
-            case WARDEN -> { tw = 128; th = 128; u = 48; v = 0; }
+            case WARDEN, WARDEN_REQUIEM -> { tw = 128; th = 128; u = 48; v = 0; }
             case PHANTOM -> { th = 64; u = 0; v = 20; }
+            case SHULKER -> { th = 64; u = 0; v = 28; }
+            case DOLPHIN -> { th = 64; u = 22; v = 0; }
             case SKELETON -> { u = 32; v = 16; }
             case SPIDER -> { u = 0; v = 12; }
             case SLIME -> { u = 0; v = 16; }
@@ -555,9 +603,10 @@ final class StandVisual {
             case SKELETON -> { lean = 0; tilt = 4; turn = 0; }      // pressed behind you, leaning in
             case ENDERMAN, ENDER_WORLD -> { lean = -3; tilt = 5; turn = 0; }     // looming over you, hand on your shoulder
             case IRON_GOLEM, GER -> { lean = 0; tilt = 0; turn = 0; }    // standing normally
-            case CREEPER -> { lean = 0; tilt = 5; turn = 0; }       // pressed behind you, leaning in
+            case CREEPER, CREEPER_REQUIEM -> { lean = 0; tilt = 5; turn = 0; }       // pressed behind you, leaning in
             case BLAZE -> { lean = 0; tilt = 4; turn = 0; }         // pressed behind you, leaning in
             case WARDEN -> { lean = -5; tilt = -3; turn = 0; }      // hunched predator
+            case WARDEN_REQUIEM -> { lean = -9; tilt = 0; turn = 0; }   // bent over you from behind
             case PHANTOM -> { lean = -10; tilt = 14; turn = 0; }    // banking glide
             case SPIDER -> { lean = 0; tilt = 0; turn = 0; }        // clinging to your back
             case SLIME -> { lean = 0; tilt = 0; turn = 0; }         // sits flat like a real slime
@@ -677,6 +726,51 @@ final class StandVisual {
         rot(part("left_leg"), 0.0F, 0.0F, 0.0F);
     }
 
+    /**
+     * Wonder of Deep: wrong, not cool. It stands right behind you, bent over you, completely still - no breathing,
+     * no glancing around. Its head hangs tipped too far to one side, as if the neck doesn't hold it up, staring
+     * down at the back of your head. Arms hang dead straight, a little too long, fingers almost at its knees.
+     * Every few seconds the head jerks - a sharp, tiny twitch - and then it's still again. Now and then it
+     * slowly rolls its head to the other side.
+     */
+    private void wonderOfDeepPose(float age) {
+        lookAround = 0.0F;
+        rot(part("bone", "body"), 0.32F, 0.0F, 0.0F);
+        // Which side its head lolls to: changes very slowly, once in a long while.
+        float roll = Mth.clamp(Mth.sin(age * 0.004F) * 3.0F, -1.0F, 1.0F);
+        float twitch = 0.0F;
+        int beat = (int) age % 83;
+        if (beat < 2) twitch = 0.16F;              // snap
+        else if (beat < 4) twitch = -0.06F;        // settle
+        int beat2 = (int) (age + 31) % 137;
+        float jerk = beat2 < 2 ? 0.12F : 0.0F;     // a second, out-of-step twitch so it never feels like a loop
+        // Set outright (not added on top of the walk or your look): the head never bobs or follows, it only twitches.
+        ModelPart head = part("bone", "body", "head");
+        if (head != null) {
+            head.xRot = 0.55F + jerk;
+            head.yRot = 0.12F * roll;
+            head.zRot = 0.62F * roll + twitch;
+        }
+        rot(part("bone", "body", "right_arm"), -0.32F, 0.0F, 0.04F);
+        rot(part("bone", "body", "left_arm"), -0.32F, 0.0F, -0.04F);
+        ModelPart ra = part("bone", "body", "right_arm");
+        ModelPart la = part("bone", "body", "left_arm");
+        if (ra != null) ra.y = ra.getInitialPose().y + 1.5F; // hanging a little lower than they should
+        if (la != null) la.y = la.getInitialPose().y + 1.5F;
+        // Legs far too long and thin: stretched down to the ground from where it's been lifted to.
+        float legPx = 13.0F;
+        float extra = (float) (com.mobstands.entity.StandEntity.WOD_RAISE * 16.0D / type.scale());
+        float stretch = (legPx + extra) / legPx;
+        for (String leg : new String[]{"right_leg", "left_leg"}) {
+            ModelPart p = part("bone", leg);
+            if (p == null) continue;
+            rot(p, 0.0F, 0.0F, 0.0F); // it doesn't walk after you: it just glides along, legs dead straight
+            p.yScale = stretch;
+            p.xScale = 0.8F;
+            p.zScale = 0.8F;
+        }
+    }
+
     private void idlePose(float age) {
         if (type == StandType.PIG || type == StandType.ALLAY) {
             // Looking around at random, like the real animal.
@@ -742,7 +836,7 @@ final class StandVisual {
                 if (ra != null) ra.xRot += b * 0.5F;
                 if (la != null) la.xRot -= b * 0.5F;
             }
-            case CREEPER -> {
+            case CREEPER, CREEPER_REQUIEM -> {
                 // Right behind you: dead still, chin slightly down, staring straight ahead.
                 headRot(part("head"), 0.12F, 0.0F, 0.0F);
             }
@@ -750,6 +844,7 @@ final class StandVisual {
                 // Right behind you: glaring straight ahead, chin slightly down.
                 headRot(part("head"), 0.12F, 0.0F, 0.0F);
             }
+            case WARDEN_REQUIEM -> wonderOfDeepPose(age);
             case WARDEN -> {
                 // Hunched body, arms spread wide and low, head pushed forward.
                 rot(part("bone", "body"), 0.25F, 0.0F, 0.0F);

@@ -4,7 +4,17 @@ A JoJo-inspired mod: every player can awaken a Minecraft mob as their own **Stan
 that floats beside you, fights when you tell it to, and levels up with you. Some Stands can go further and awaken a
 **Requiem**. On top of that there's Gyro's **Spin**, learned from a Steel Ball.
 
-Current version: **1.1**
+Current version: **1.2**
+
+## What's new in 1.2
+- **Barrage Clash**: two players throw a Barrage at each other face to face and the fists meet - mash the Barrage key to push the clash point; the winner breaks through with a finishing blow.
+- **Bites the Dust**: the rewind now brings back everything from the last 6 seconds - players still on the death screen, mobs erased by Primer, broken boats and item frames, chest and furnace contents, ender chests. New menacing sound, 20 s cooldown.
+- **Primer** erases a mob Killer Queen-style: it swells and flashes like a creeper, then a big slow blast that harms nothing around it and leaves no trace.
+- **Wonder of Deep**: monsters that come for you meet calamity faster the closer they get and never reach you; hits and arrows go back to whoever threw them; real falling dripstone. It stands right behind you - tall, still, faded and wrong. No punch. Summoning it brings 3 s of Darkness (toggle with Z or `/stand darkness on|off`).
+- **C-Moon**: hold X for the Gravity Punch wheel, hold C for the Gravity Turn wheel (your own gravity, no aiming). Hitbox lies along your body on walls, vanilla walking animation, no more random gravity flips.
+- **Lazarus Smile**: new ability Lazarus (C) - players who died nearby and haven't respawned get back up, and pets and peaceful mobs come back.
+- **Creeper Stands** don't punch - they only explode. Shift + Echoing Arrow gives up your Stand.
+- Multiplayer fixes (no item duplication through rewinds, no reflected-hit crash, no stale gravity on reused entities) and performance work.
 
 ## Download
 Grab the jar from the [Releases](../../releases) page and drop it in your `mods` folder (NeoForge 21.1.x for
@@ -40,7 +50,7 @@ Requires **JDK 21**.
 | Jelly Rebound | Slime | Squish Slam, Ricochet Blob, Super Bounce, Mega Quake |
 | Rattling Marksman | Skeleton | Bone Arrow, Rapid Fire, Piercing Shot, Arrow Storm |
 | Weaver of Webs | Spider | Fang Strike, Web Shot, Spider Climb, Web Cocoon |
-| Green Detonator | Creeper | Fuse Punch, Hissing Burst, Kamikaze Rush, Big Bang, Heart Attack (Sheer Heart Attack-style mini creeper) |
+| Green Detonator | Creeper | Hissing Burst, Kamikaze Rush, Big Bang, Heart Attack (Sheer Heart Attack-style mini creeper) |
 | Iron Colossus | Iron Golem | Iron Fist, Barrage, Ground Slam, World Breaker |
 | Midnight Wing | Phantom | Talon Swipe, Sky Rush, **Aerosmith** (pilot it, see below), Midnight Swarm, Dream Walk |
 | Void Stalker | Enderman | Void Slash, Barrage, Blink, Void Collapse |
@@ -76,12 +86,14 @@ on in the config. Max level is 10. XP comes from using abilities and from kills.
 | Requiem | From | How to earn it | Abilities |
 |---|---|---|---|
 | **The Ender World** | Enderman Stand | Requiem Trial: kill the Ender Dragon with your Stand out, spend a full day in the End, then pose at midnight | Void Jab, Barrage, Time Skip, **Time Stop** |
-| **Gilded Silence** (a Piglin Brute) | Piglin Stand | Requiem Trial (shown in the Stand menu) | Steal Sound, Switch Sound, Release Sound, Go Beyond |
+| **Pigstep** (a Piglin Brute) | Piglin Stand | Requiem Trial (shown in the Stand menu) | Brute Jab, Steal, Release, Another World, Null Bubble |
 | **Guardian Experience Requiem** | Iron Golem Stand | Use a Stand Arrow during a raid at 3 hearts or less: a 50/50. On a fail the arrow breaks, and there's a 15% chance your Stand drops to level 1 | Requiem Fist, MUDA Barrage, **Return to Zero**, Life Giver, Golden Barrier |
 
 * **Time Stop** uses the game's real tick freeze. Arrows stop in the air, and nothing frozen can hurt you.
-* **Gilded Silence** steals a creature's sound with a sculk vibration (around 45 sounds, from creepers to slimes),
-  then releases that sound's power.
+* **Pigstep** (Soft & Wet style) steals from a creature: pick its own property (a slime's bounce, a creeper's
+  volatility, an enderman's teleport...) or its sound, then Release it onto something else or let the sound's power
+  loose. It can also take a creature's sight, friction, heat, water, breath or footing for 10 seconds.
+  **Null Bubble** drifts slowly through walls and armor and pops inside its target.
 * **Return to Zero** is a counter with a skippable cutscene: the attacker rewinds, its copies look back, and it dies
   over and over, gone forever. Its loot goes to your inventory. Against bosses it just nullifies the attack, unless the
   boss is at 10% health or less.

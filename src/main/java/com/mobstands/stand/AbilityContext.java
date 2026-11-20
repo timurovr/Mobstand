@@ -34,6 +34,9 @@ public final class AbilityContext {
     public final StandData data;
     public final int standLevel;
 
+    /** Set by an ability that didn't go off, to say why (shown instead of "No valid target."). */
+    public String fail;
+
     public AbilityContext(ServerPlayer owner, StandEntity stand, ServerLevel level, StandType type, StandData data) {
         this.owner = owner;
         this.stand = stand;
@@ -188,6 +191,8 @@ public final class AbilityContext {
     // ------------------------------------------------------------------ damage / effects
 
     public boolean hurt(LivingEntity target, float amount) {
+        // Gold Experience Requiem: every blow overloads the senses - the enemy is left stunned for a moment.
+        if (type == StandType.GER) Ger.stun(target);
         return StandCombat.hurt(owner, target, amount);
     }
 
@@ -215,6 +220,56 @@ public final class AbilityContext {
         level.sendParticles(ParticleTypes.LARGE_SMOKE, pos.x, pos.y, pos.z, (int) (8 + p * 5), p * 0.5D, p * 0.4D, p * 0.5D, 0.02D);
         level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.GENERIC_EXPLODE, SoundSource.PLAYERS,
                 Math.min(4.0F, 1.5F + p * 0.5F), 0.85F + level.random.nextFloat() * 0.2F);
+    }
+
+    /**
+     * A big, slow, cinematic blast (same damage as {@link #explode}): a white flash and a deep boom, a fireball that
+     * swells and rolls upward, shockwave rings spreading along the ground, a mushroom column of smoke rising for
+     * about two seconds, embers raining down, and a low rumble rolling away.
+     */
+    public void bigExplode(Vec3 pos, double basePower) {
+        explode(pos, basePower);
+        bigBlastFx(level, pos, basePower);
+    }
+
+    /** The cinematic part of a big blast on its own (no damage), for blasts made elsewhere (Heart Attack...). */
+    public static void bigBlastFx(ServerLevel level, Vec3 pos, double basePower) {
+        double r = Math.max(1.5D, basePower);
+        level.sendParticles(ParticleTypes.FLASH, pos.x, pos.y, pos.z, 2, 0.0D, 0.0D, 0.0D, 0.0D);
+        level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, pos.x, pos.y, pos.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 3.0F, 0.5F);
+        level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS, 1.2F, 0.6F);
+        for (int i = 1; i <= 40; i++) {
+            final int k = i;
+            TickScheduler.later(i, () -> {
+                // Fireball: swells, then rolls up into the column.
+                if (k <= 12) {
+                    double s = r * (0.4D + k * 0.08D);
+                    level.sendParticles(ParticleTypes.FLAME, pos.x, pos.y + k * 0.08D, pos.z, 18, s * 0.5D, s * 0.4D, s * 0.5D, 0.04D);
+                    level.sendParticles(ParticleTypes.LAVA, pos.x, pos.y, pos.z, 2, s * 0.4D, s * 0.3D, s * 0.4D, 0.0D);
+                }
+                // Shockwave rings along the ground.
+                if (k <= 10 && k % 2 == 0) {
+                    double rad = r * 0.6D * k * 0.4D;
+                    int pts = 24 + k * 3;
+                    for (int j = 0; j < pts; j++) {
+                        double a = (Math.PI * 2.0D) * j / pts;
+                        level.sendParticles(ParticleTypes.CLOUD, pos.x + Math.cos(a) * rad, pos.y - 0.6D, pos.z + Math.sin(a) * rad, 1, 0.0D, 0.05D, 0.0D, 0.01D);
+                    }
+                }
+                if (k == 3 || k == 7) {
+                    level.sendParticles(ParticleTypes.EXPLOSION, pos.x, pos.y + k * 0.15D, pos.z, 6, r * 0.6D, r * 0.4D, r * 0.6D, 0.0D);
+                    level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 1.5F, 0.4F + k * 0.03F);
+                }
+                // Mushroom column: smoke climbing, the cap spreading out at the top.
+                double h = Math.min(k, 30) * 0.18D;
+                level.sendParticles(ParticleTypes.LARGE_SMOKE, pos.x, pos.y + h, pos.z, 4, 0.3D + k * 0.01D, 0.2D, 0.3D + k * 0.01D, 0.01D);
+                if (k >= 10) level.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, pos.x, pos.y + h + 0.6D, pos.z, 2, r * 0.25D + k * 0.03D, 0.1D, r * 0.25D + k * 0.03D, 0.005D);
+                // Embers drifting down.
+                if (k >= 6 && k % 3 == 0) level.sendParticles(ParticleTypes.SMALL_FLAME, pos.x, pos.y + h, pos.z, 6, r * 0.8D, 0.4D, r * 0.8D, 0.0D);
+                if (k == 14 || k == 26) level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS, 0.6F, 0.4F);
+            });
+        }
     }
 
     public void fire(StandProjectile.Kind kind, Vec3 origin, Vec3 dir, double baseDamage) {

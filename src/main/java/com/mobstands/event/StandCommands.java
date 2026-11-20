@@ -36,6 +36,10 @@ public final class StandCommands {
                 .then(Commands.literal("aura")
                         .then(Commands.literal("on").executes(ctx -> setAura(ctx, true)))
                         .then(Commands.literal("off").executes(ctx -> setAura(ctx, false))))
+                // Wonder of Deep: whether summoning it darkens everyone nearby.
+                .then(Commands.literal("darkness")
+                        .then(Commands.literal("on").executes(ctx -> setDark(ctx, true)))
+                        .then(Commands.literal("off").executes(ctx -> setDark(ctx, false))))
                 // The Spin technique (separate from your Stand).
                 .then(Commands.literal("spin")
                         .then(Commands.literal("learn").executes(ctx -> {
@@ -67,6 +71,15 @@ public final class StandCommands {
                                     ctx.getSource().sendSuccess(() -> Component.literal("Spin level set to " + d.spinLevel), false);
                                     return 1;
                                 })))));
+    }
+
+    private static int setDark(CommandContext<CommandSourceStack> ctx, boolean on) throws CommandSyntaxException {
+        ServerPlayer p = ctx.getSource().getPlayerOrException();
+        StandData d = StandManager.data(p);
+        d.wodDarkOff = !on;
+        StandManager.sync(p);
+        ctx.getSource().sendSuccess(() -> Component.literal("Wonder of Deep's darkness " + (on ? "on" : "off")), false);
+        return 1;
     }
 
     private static int setAura(CommandContext<CommandSourceStack> ctx, boolean on) throws CommandSyntaxException {

@@ -59,5 +59,17 @@
     "sounds": [
       "mobstands:stand/spin_crackle"
     ]
+  },
+  "ger.return_to_zero": {
+    "subtitle": "subtitles.mobstands.ger.return_to_zero",
+    "sounds": [
+      "mobstands:ger/return_to_zero"
+    ]
+  },
+  "stand.lazarus": {
+    "subtitle": "subtitles.mobstands.stand.lazarus",
+    "sounds": [
+      "mobstands:stand/lazarus"
+    ]
   }
 }

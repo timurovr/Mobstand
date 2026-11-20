@@ -24,6 +24,7 @@ public final class ClientSetup {
         event.register(StandKeys.ABILITY2);
         event.register(StandKeys.ULTIMATE);
         event.register(StandKeys.ABILITY4);
+        event.register(StandKeys.ABILITY5);
         event.register(StandKeys.INFO);
         event.register(StandKeys.POSE);
     }
@@ -37,5 +38,6 @@ public final class ClientSetup {
         event.registerAboveAll(MobStands.id("spin_cue"), SpinInput::render);
         event.registerAboveAll(MobStands.id("stand_hud"), StandHud::render);
         event.registerAboveAll(MobStands.id("pilot_heat"), PilotClient::render);
+        event.registerAboveAll(MobStands.id("rain_timer"), RainClient::render);
     }
 }

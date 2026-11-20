@@ -574,7 +574,7 @@ public class StandEntity extends Entity {
             sl.playSound(null, getX(), getY(), getZ(), net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_SWEEP, net.minecraft.sounds.SoundSource.HOSTILE, 0.5F, 1.3F);
             com.mobstands.stand.TickScheduler.later(StandAbilities.PUNCH_HIT_TICK, () -> {
                 if (isRemoved() || !victim.isAlive() || !o.isAlive() || victim.distanceToSqr(this) > 4.5D * 4.5D) return;
-                float dmg = type == StandType.IRON_GOLEM ? 6.0F : 4.5F;
+                float dmg = type == StandType.IRON_GOLEM ? 2.0F : 1.5F;
                 if (victim.hurt(sl.damageSources().mobAttack(o), dmg)) {
                     Vec3 push = victim.position().subtract(position()).multiply(1.0D, 0.0D, 1.0D);
                     if (push.lengthSqr() > 1.0E-4D) victim.knockback(0.6D, -push.x, -push.z);
@@ -834,6 +834,12 @@ public class StandEntity extends Entity {
         return reformTicks > 0;
     }
 
+    /** Back at once (Bites the Dust undid whatever blew it apart). */
+    public void endReform() {
+        if (reformTicks <= 0) return;
+        reformTicks = 1; // finishes on the next tick, with its usual puff
+    }
+
     // ------------------------------------------------------------------ position
 
     /** Behind and slightly to the right of the owner, hovering. */
@@ -964,7 +970,7 @@ public class StandEntity extends Entity {
         if (cur.distanceToSqr(home) > 64.0D) {
             next = home; // teleports, respawns, dimension changes
         } else {
-            next = type == StandType.HORSE || (type.isCart() && isCartRide()) ? home : cur.add(home.subtract(cur).scale(0.45D)); // the horse head sits fixed
+            next = type == StandType.HORSE || type == StandType.SHULKER || (type.isCart() && isCartRide()) ? home : cur.add(home.subtract(cur).scale(0.45D)); // the horse head sits fixed
             Vec3 off = next.subtract(home);
             if (off.length() > MAX_DRIFT) next = home.add(off.normalize().scale(MAX_DRIFT));
         }
@@ -1317,6 +1323,12 @@ public class StandEntity extends Entity {
         setPos(pos.x, pos.y, pos.z);
     }
 
+    /** C-Moon on your shoulder: how far out to the side, and how far below the top of your head it sits. */
+    public static final double SHOULDER_SIDE = 0.38D, SHOULDER_DROP = 0.42D;
+
+    /** Wonder of Deep stands this much taller (blocks); its legs stretch to keep its feet on the ground. */
+    public static final double WOD_RAISE = 0.6D;
+
     public static Vec3 homePosition(LivingEntity owner, StandType type, int tick, int sideSign) {
         double yaw = Math.toRadians(owner.getYRot());
         double fx = -Math.sin(yaw);
@@ -1326,6 +1338,13 @@ public class StandEntity extends Entity {
         if (type == StandType.HORSE) {
             return new Vec3(owner.getX(), owner.getY() + owner.getBbHeight() + 0.02D, owner.getZ()); // on top of your head
         }
+        if (type == StandType.SHULKER) {
+            // Sits on your shoulder like a parrot (follows your body, not your head), lower when you sneak.
+            double by = Math.toRadians(owner.yBodyRot);
+            double sx = -Math.cos(by) * sideSign, sz = -Math.sin(by) * sideSign;
+            return new Vec3(owner.getX() + sx * SHOULDER_SIDE, owner.getY() + owner.getBbHeight() - SHOULDER_DROP,
+                    owner.getZ() + sz * SHOULDER_SIDE);
+        }
         if (type == StandType.SQUID) {
             // Floats right above your head, tentacles hanging down over you.
             return new Vec3(owner.getX() - fx * 0.15D, owner.getY() + 4.1D + Math.sin(tick * 0.06D) * 0.1D, owner.getZ() - fz * 0.15D);
@@ -1333,6 +1352,18 @@ public class StandEntity extends Entity {
         if (type == StandType.SPIDER) {
             // Clinging to your back: belly against you, the model is turned upright by the renderer.
             return new Vec3(owner.getX() - fx * SPIDER_BACK, owner.getY() + SPIDER_HEIGHT, owner.getZ() - fz * SPIDER_BACK);
+        }
+        if (type == StandType.WARDEN_REQUIEM) {
+            // Right behind you, dead center, feet on the ground - no floating, no bobbing. Just there.
+            double x = owner.getX() - fx * 0.75D;
+            double z = owner.getZ() - fz * 0.75D;
+            BlockPos bp = BlockPos.containing(x, owner.getY() + 0.9D, z);
+            if (!owner.level().getBlockState(bp).getCollisionShape(owner.level(), bp).isEmpty()) {
+                x = owner.getX() - fx * 0.2D;
+                z = owner.getZ() - fz * 0.2D;
+            }
+            // Raised up on its too-long legs: it looms over your head instead of swallowing it.
+            return new Vec3(x, owner.getY() + WOD_RAISE, z);
         }
         double back = type.closeBehind() ? 0.5D : 1.15D;
         double side = type.closeBehind() ? 0.6D : 0.85D;
@@ -1461,7 +1492,7 @@ public class StandEntity extends Entity {
         org.joml.Vector3f rgb = new org.joml.Vector3f((c >> 16 & 255) / 255.0F, (c >> 8 & 255) / 255.0F, (c & 255) / 255.0F);
         net.minecraft.core.particles.DustParticleOptions dust = new net.minecraft.core.particles.DustParticleOptions(rgb, 1.4F);
         net.minecraft.core.particles.ParticleOptions sparkle = switch (type) {
-            case WARDEN -> net.minecraft.core.particles.ParticleTypes.GLOW;
+            case WARDEN, WARDEN_REQUIEM -> net.minecraft.core.particles.ParticleTypes.GLOW;
             case ENDERMAN, ENDER_WORLD -> net.minecraft.core.particles.ParticleTypes.REVERSE_PORTAL;
             case AXOLOTL -> net.minecraft.core.particles.ParticleTypes.GLOW;
             case BLAZE -> net.minecraft.core.particles.ParticleTypes.FLAME;
@@ -1477,7 +1508,7 @@ public class StandEntity extends Entity {
             double vx = Math.cos(a) * 0.02D, vz = Math.sin(a) * 0.02D;
             level().addParticle(sparkle, x, y, z, vx, 0.01D + random.nextDouble() * 0.02D, vz);
             if (random.nextBoolean()) level().addParticle(dust, x, y, z, 0.0D, 0.0D, 0.0D);
-            if (type == StandType.WARDEN && random.nextInt(3) == 0) {
+            if ((type == StandType.WARDEN || type == StandType.WARDEN_REQUIEM) && random.nextInt(3) == 0) {
                 level().addParticle(net.minecraft.core.particles.ParticleTypes.SCULK_CHARGE_POP, x, y, z, 0.0D, 0.03D, 0.0D);
             }
         }
@@ -1493,8 +1524,8 @@ public class StandEntity extends Entity {
         if (slot == 0) {
             return type != StandType.SKELETON && type != StandType.BLAZE && type != StandType.ALLAY;
         }
-        return type == StandType.IRON_GOLEM || type == StandType.GER || type == StandType.WARDEN || type == StandType.PHANTOM
-                || type == StandType.SLIME || type == StandType.CREEPER || type == StandType.ENDERMAN || type == StandType.ENDER_WORLD;
+        return type == StandType.IRON_GOLEM || type == StandType.GER || (type == StandType.WARDEN || type == StandType.WARDEN_REQUIEM) || type == StandType.PHANTOM
+                || type == StandType.SLIME || type == StandType.CREEPER || type == StandType.CREEPER_REQUIEM || type == StandType.ENDERMAN || type == StandType.ENDER_WORLD;
     }
 
     /** Where the fist is at swing progress p (0..1): sweeps from the shoulder, out to the front. */
@@ -1637,7 +1668,7 @@ public class StandEntity extends Entity {
 
     /** The Stand reacts on its own when a hostile is attacking its owner. */
     private void autoAssist(ServerPlayer owner, StandData data, StandType type) {
-        if (autoCooldown > 0 || isHidden() || lungeTicks > 0 || !StandConfig.AUTO_ASSIST.get() || !type.hasBasic()) return;
+        if (autoCooldown > 0 || isHidden() || lungeTicks > 0 || !StandConfig.AUTO_ASSIST.get() || !type.hasBasic() || type == StandType.SQUID) return;
         if (animProgress(0.0F) >= 0.0F) return;
         ServerLevel sl = (ServerLevel) level();
         LivingEntity best = null;

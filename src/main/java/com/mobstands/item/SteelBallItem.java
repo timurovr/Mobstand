@@ -21,18 +21,13 @@ public class SteelBallItem extends Item {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
-        ItemStack stack = player.getItemInHand(hand);
-        boolean learned = level.isClientSide ? com.mobstands.network.ClientStandCache.get().spinLearned
-                : StandManager.data((ServerPlayer) player).spinLearned;
-        if (learned) return InteractionResultHolder.pass(stack);
-        if (player instanceof ServerPlayer sp) StandManager.learnSpin(sp);
-        player.swing(hand, true);
-        return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+        // The Spin is learned from a Spin Scroll now, not from the ball itself.
+        return InteractionResultHolder.pass(player.getItemInHand(hand));
     }
 
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext ctx, List<Component> tooltip, TooltipFlag flag) {
-        tooltip.add(Component.literal("Right-click to learn the Spin").withStyle(s -> s.withColor(0xE8C25A)));
+        tooltip.add(Component.literal("Learn the Spin from a Spin Scroll").withStyle(s -> s.withColor(0xE8C25A)));
         tooltip.add(Component.literal("Only a Spin master can spin it").withStyle(s -> s.withColor(0x8A8A8A)));
         tooltip.add(Component.literal("Spinning on horseback: right-click to put the Spin in its legs").withStyle(s -> s.withColor(0x8A8A8A)));
     }

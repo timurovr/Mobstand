@@ -5,12 +5,16 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "PrimaryLevelDataMixin",
+    "EntityBoxMixin",
     "TickRateManagerMixin"
   ],
   "client": [
     "WorldOpenFlowsMixin",
     "HumanoidModelMixin",
-    "ItemInHandLayerMixin"
+    "ItemInHandLayerMixin",
+    "EntityGravityMixin",
+    "CameraGravityMixin",
+    "LivingRendererFuseMixin"
   ],
   "injectors": {
     "defaultRequire": 1

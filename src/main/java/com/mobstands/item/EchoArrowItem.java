@@ -35,6 +35,26 @@ public class EchoArrowItem extends Item {
             return InteractionResultHolder.success(stack);
         }
         StandData d = StandManager.data(sp);
+        // Sneak + use: give your Stand up. It fades out of you for good (the arrow isn't used up).
+        if (sp.isShiftKeyDown()) {
+            if (d.getType() == null) return InteractionResultHolder.fail(stack);
+            net.minecraft.server.level.ServerLevel sl = sp.serverLevel();
+            var st = StandManager.getStand(sp);
+            net.minecraft.world.phys.Vec3 at = st != null ? st.position() : sp.position();
+            sl.sendParticles(net.minecraft.core.particles.ParticleTypes.POOF, at.x, at.y + 1.0D, at.z, 30, 0.4D, 0.7D, 0.4D, 0.03D);
+            sl.sendParticles(net.minecraft.core.particles.ParticleTypes.SCULK_SOUL, at.x, at.y + 1.0D, at.z, 12, 0.3D, 0.6D, 0.3D, 0.02D);
+            sl.playSound(null, sp.getX(), sp.getY(), sp.getZ(), net.minecraft.sounds.SoundEvents.SOUL_ESCAPE.value(),
+                    net.minecraft.sounds.SoundSource.PLAYERS, 1.5F, 0.7F);
+            sl.playSound(null, sp.getX(), sp.getY(), sp.getZ(), net.minecraft.sounds.SoundEvents.BEACON_DEACTIVATE,
+                    net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 0.8F);
+            StandManager.removeEntity(sp);
+            d.setType(null);
+            d.resetProgress();
+            d.setSummoned(false);
+            StandManager.sync(sp);
+            sp.getCooldowns().addCooldown(this, 20);
+            return InteractionResultHolder.success(stack);
+        }
         // An Iron Golem Stand user, in a raid, at death's door: the arrow may awaken its Requiem (or reject you).
         if (com.mobstands.stand.Ger.tryAwaken(sp)) {
             if (!sp.getAbilities().instabuild) stack.shrink(1);

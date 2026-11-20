@@ -167,6 +167,9 @@ public final class StandManager {
     }
 
     /** @param announce false for silent re-spawns (after teleports, dimension changes, relogging). */
+    /** How far Wonder of Deep's arrival darkens the world around you. */
+    private static final double WOD_DARK_RADIUS = 16.0D;
+
     private static void summon(ServerPlayer p, boolean announce) {
         StandData d = data(p);
         if (d.getType() == null || !p.isAlive()) return;
@@ -189,6 +192,13 @@ public final class StandManager {
                 mobVoice(p, d.getType());
                 s.setPosing(true); // you strike your pose as it appears, until you move
                 d.poseAnchor = p.position();
+                if (d.getType() == StandType.WARDEN_REQUIEM && !d.wodDarkOff) {
+                    // Wonder of Deep arrives: the light drains for everyone nearby - you included - for 3 seconds.
+                    for (net.minecraft.world.entity.LivingEntity e : level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,
+                            p.getBoundingBox().inflate(WOD_DARK_RADIUS), x -> x.isAlive() && x.distanceToSqr(p) <= WOD_DARK_RADIUS * WOD_DARK_RADIUS)) {
+                        e.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.DARKNESS, 60, 0, false, false));
+                    }
+                }
             }
         }
         sync(p);
@@ -216,7 +226,7 @@ public final class StandManager {
                 switch (type) {
                     case WARDEN -> { voice(level, s, SoundEvents.WARDEN_ROAR, 1.6F, 1.0F); voice(level, s, SoundEvents.WARDEN_ANGRY, 1.2F, 1.0F); }
                     case ENDERMAN, ENDER_WORLD -> voice(level, s, SoundEvents.ENDERMAN_SCREAM, 1.5F, 1.0F);
-                    case CREEPER -> voice(level, s, SoundEvents.CREEPER_PRIMED, 1.6F, 0.7F);
+                    case CREEPER, CREEPER_REQUIEM -> voice(level, s, SoundEvents.CREEPER_PRIMED, 1.6F, 0.7F);
                     case BLAZE -> { voice(level, s, SoundEvents.BLAZE_HURT, 1.4F, 0.8F); voice(level, s, SoundEvents.BLAZE_SHOOT, 1.0F, 0.8F); }
                     case PHANTOM -> { voice(level, s, SoundEvents.PHANTOM_SWOOP, 1.5F, 0.8F); voice(level, s, SoundEvents.PHANTOM_BITE, 1.2F, 0.8F); }
                     case SKELETON -> voice(level, s, SoundEvents.SKELETON_HURT, 1.4F, 0.7F);
@@ -239,7 +249,7 @@ public final class StandManager {
                     case PHANTOM -> voice(level, s, SoundEvents.PHANTOM_AMBIENT, 1.0F, 1.0F);
                     case SKELETON -> voice(level, s, SoundEvents.SKELETON_AMBIENT, 1.0F, 1.0F);
                     case SPIDER -> voice(level, s, SoundEvents.SPIDER_AMBIENT, 1.0F, 1.0F);
-                    case CREEPER -> voice(level, s, SoundEvents.CREEPER_PRIMED, 0.5F, 1.2F);
+                    case CREEPER, CREEPER_REQUIEM -> voice(level, s, SoundEvents.CREEPER_PRIMED, 0.5F, 1.2F);
                     case SLIME -> voice(level, s, SoundEvents.SLIME_SQUISH, 1.0F, 1.0F);
                     case SQUID -> voice(level, s, SoundEvents.SQUID_AMBIENT, 1.0F, 1.0F);
                     case AXOLOTL -> voice(level, s, SoundEvents.AXOLOTL_IDLE_AIR, 1.0F, 1.0F);
@@ -614,7 +624,7 @@ public final class StandManager {
      */
     public static void spinPress(ServerPlayer p, boolean fullStack) {
         StandData d = data(p);
-        if (!d.spinLearned) {
+        if (!d.canSpin()) {
             dropSelected(p, fullStack);
             return;
         }
@@ -658,7 +668,7 @@ public final class StandManager {
      */
     public static void spinFumble(ServerPlayer p, boolean offHand) {
         StandData d = data(p);
-        if (!d.spinLearned) return;
+        if (!d.canSpin()) return;
         ServerLevel sl = (ServerLevel) p.level();
         net.minecraft.world.item.ItemStack removed = offHand ? p.getOffhandItem().split(1) : p.getInventory().removeFromSelected(false);
         if (removed.isEmpty()) return;
@@ -715,7 +725,7 @@ public final class StandManager {
      */
     /** A Spin master: max level. */
     public static boolean spinMaster(StandData d) {
-        return d.spinLearned && d.spinLevel >= StandData.SPIN_MAX_LEVEL;
+        return d.canSpin() && d.spinLevel >= StandData.SPIN_MAX_LEVEL;
     }
 
     /** Weapons (swords, axes, tridents, maces). */
@@ -736,7 +746,7 @@ public final class StandManager {
     public static void spinDualSteel(ServerPlayer p) {
         StandData d = data(p);
         net.minecraft.world.item.Item steel = com.mobstands.registry.ModItems.STEEL_BALL.get();
-        if (!d.spinLearned) return;
+        if (!d.canSpin()) return;
         if (!p.getMainHandItem().is(steel) && p.getOffhandItem().is(steel)) {
             // The ball's in your off hand: bring a second one into your main hand first.
             if (mayNotSpin(p, d, p.getOffhandItem())) return;
@@ -816,7 +826,7 @@ public final class StandManager {
     public static void spinStart(ServerPlayer p) {
         StandData d = data(p);
         net.minecraft.world.item.ItemStack held = p.getMainHandItem();
-        if (!d.spinLearned || held.isEmpty() || d.spinning) return;
+        if (!d.canSpin() || held.isEmpty() || d.spinning) return;
         if (mayNotSpin(p, d, held)) return;
         ServerLevel sl = (ServerLevel) p.level();
         d.spinning = true;
@@ -838,7 +848,7 @@ public final class StandManager {
     public static void spinOffHand(ServerPlayer p, int action) {
         StandData d = data(p);
         net.minecraft.world.item.ItemStack off = p.getOffhandItem();
-        if (!d.spinLearned || off.isEmpty()) return;
+        if (!d.canSpin() || off.isEmpty()) return;
         ServerLevel sl = (ServerLevel) p.level();
         long now = sl.getGameTime();
         switch (action) {
@@ -912,7 +922,7 @@ public final class StandManager {
     public static void spinThrow(ServerPlayer p) {
         StandData d = data(p);
         net.minecraft.world.item.ItemStack held = p.getMainHandItem();
-        if (!d.spinLearned || !d.spinning || held.isEmpty()) return;
+        if (!d.canSpin() || !d.spinning || held.isEmpty()) return;
         long now = p.level().getGameTime();
         float power = (0.35F + 0.65F * spinSpeed(d, now)) * spinMult(d.spinLevel);
         net.minecraft.world.item.ItemStack one = held.split(1);
@@ -935,7 +945,7 @@ public final class StandManager {
      */
     public static void spinThrowFar(ServerPlayer p, int charge) {
         StandData d = data(p);
-        if (!d.spinLearned) return;
+        if (!d.canSpin()) return;
         if (HorseSpin.tryApply(p, d)) return; // riding: the Spin goes into the horse's legs instead
         long now = p.level().getGameTime();
         boolean main = d.spinning && !p.getMainHandItem().isEmpty()
@@ -1003,7 +1013,7 @@ public final class StandManager {
         com.mobstands.entity.SpinItemEntity best = null;
         double bestAng = 0.06D; // about 3.5 degrees off the crosshair, at most
         for (com.mobstands.entity.SpinItemEntity si : p.serverLevel().getEntitiesOfClass(com.mobstands.entity.SpinItemEntity.class,
-                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.ownedBy(p))) {
+                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.ownedBy(p) && x.isSteel())) { // only Steel Balls answer the call
             Vec3 to = si.position().add(0.0D, si.getBbHeight() * 0.5D, 0.0D).subtract(eye);
             double d = to.length();
             if (d < 1.0E-3D || d > RECALL_RANGE) continue;
@@ -1175,7 +1185,7 @@ public final class StandManager {
 
     /** A spinning sword (main hand) is in your hand. */
     public static boolean spinningSword(StandData d, net.minecraft.world.item.ItemStack main) {
-        return d.spinLearned && d.spinning && main.getItem() instanceof net.minecraft.world.item.SwordItem;
+        return d.canSpin() && d.spinning && main.getItem() instanceof net.minecraft.world.item.SwordItem;
     }
 
     /**
@@ -1261,7 +1271,7 @@ public final class StandManager {
     /** F (swap hands): a spinning item keeps spinning in whichever hand it ends up in. */
     public static void spinSwapHands(ServerPlayer p) {
         StandData d = data(p);
-        if (!d.spinLearned || (!d.spinning && !d.offSpinning)) return;
+        if (!d.canSpin() || (!d.spinning && !d.offSpinning)) return;
         boolean mainWas = d.spinning, offWas = d.offSpinning;
         long mainStart = d.spinStart, offStart = d.offSpinStart;
         net.minecraft.world.item.Item mainItem = d.spinItem, offItem = d.offSpinItem;
@@ -1567,7 +1577,7 @@ public final class StandManager {
     public static boolean orbitSpinArrow(net.minecraft.world.entity.projectile.AbstractArrow arrow) {
         if (!(arrow.getOwner() instanceof ServerPlayer p)) return false;
         StandData d = data(p);
-        if (!d.spinLearned || !d.spinning
+        if (!d.canSpin() || !d.spinning
                 || !(p.getMainHandItem().getItem() instanceof net.minecraft.world.item.ProjectileWeaponItem)) return false;
         Vec3 off = arrow.position().subtract(p.position());
         ORBITS.put(arrow.getUUID(), new Orbit(p.getUUID(), Math.atan2(off.z, off.x)));
@@ -1643,14 +1653,14 @@ public final class StandManager {
     public static void resumeSpin(ServerPlayer p, boolean offHand) {
         StandData d = data(p);
         if (offHand) {
-            if (!d.spinLearned || p.getOffhandItem().isEmpty()) return;
+            if (!d.canSpin() || p.getOffhandItem().isEmpty()) return;
             d.offSpinning = true;
             d.offSpinStart = p.level().getGameTime();
             d.offSpinItem = p.getOffhandItem().getItem();
             sync(p);
             return;
         }
-        if (!d.spinLearned || p.getMainHandItem().isEmpty()) return;
+        if (!d.canSpin() || p.getMainHandItem().isEmpty()) return;
         d.spinning = true;
         d.spinStart = p.level().getGameTime();
         d.spinArrows = 0;
@@ -1800,7 +1810,7 @@ public final class StandManager {
     private static void offSpinTick(ServerPlayer p, StandData d) {
         net.minecraft.world.item.ItemStack held = p.getOffhandItem();
         long now = p.level().getGameTime();
-        if (!d.spinLearned || held.isEmpty() || held.getItem() != d.offSpinItem || now - d.offSpinStart >= spinTicks(d.spinLevel)) {
+        if (!d.canSpin() || held.isEmpty() || held.getItem() != d.offSpinItem || now - d.offSpinStart >= spinTicks(d.spinLevel)) {
             d.offSpinning = false;
             sync(p);
         }
@@ -1809,7 +1819,7 @@ public final class StandManager {
     private static void spinTick(ServerPlayer p, StandData d) {
         net.minecraft.world.item.ItemStack held = p.getMainHandItem();
         long now = p.level().getGameTime();
-        if (!d.spinLearned || held.isEmpty() || held.getItem() != d.spinItem || p.getInventory().selected != d.spinSlot) {
+        if (!d.canSpin() || held.isEmpty() || held.getItem() != d.spinItem || p.getInventory().selected != d.spinSlot) {
             d.spinning = false;
             sync(p);
             return;
@@ -1995,6 +2005,13 @@ public final class StandManager {
 
     /** @param slot 0 = basic, 1 = Z, 2 = X, 3 = C */
     public static void use(ServerPlayer p, int slot) {
+        useAbility(p, slot);
+        // Always send the result to the player's screen - every way out of an ability (combos, follow-ups,
+        // Requiems that don't earn XP...) - so its cooldown always shows on the HUD.
+        sync(p);
+    }
+
+    private static void useAbility(ServerPlayer p, int slot) {
         if (slot < 0 || slot >= StandData.SLOTS) return;
         // Piloting the Phantom: no punching or other moves - only the key that lands it.
         StandEntity flying = getStand(p);
@@ -2011,11 +2028,13 @@ public final class StandManager {
         }
         StandEntity stand = getStand(p);
         if (stand == null) return;
-        if (stand.isHidden()) {
+        Ability ability = type.ability(slot);
+        // Bites the Dust works even while the Stand reforms: its whole point is undoing what you just blew up.
+        boolean undo = type == StandType.CREEPER_REQUIEM && "Bites the Dust".equals(ability.name());
+        if (stand.isHidden() && !undo) {
             p.displayClientMessage(Component.literal("Your Stand is reforming..."), true);
             return;
         }
-        Ability ability = type.ability(slot);
         if (ability.isEmpty() || (slot == 0 && type == StandType.AXOLOTL)) return; // nothing on that key
         StandEntity posed = getStand(p);
         if (posed != null && posed.isPosing()) posed.setPosing(false); // attacking breaks the pose
@@ -2072,7 +2091,7 @@ public final class StandManager {
             return;
         }
         if (!ability.action().run(ctx)) {
-            p.displayClientMessage(Component.literal("No valid target."), true);
+            p.displayClientMessage(Component.literal(ctx.fail != null ? ctx.fail : "No valid target."), true);
             return;
         }
         d.setCooldownEnd(slot, now + ability.cooldownTicks(d.getLevel()));
@@ -2182,7 +2201,7 @@ public final class StandManager {
     /** Spin practice: the technique has its own level, separate from your Stand's. */
     public static void addSpinXp(ServerPlayer p, int amount) {
         StandData d = data(p);
-        if (!d.spinLearned) return;
+        if (!d.canSpin()) return;
         int before = d.spinLevel;
         int gained = d.addSpinXp(amount);
         if (gained > 0) {
@@ -2211,6 +2230,8 @@ public final class StandManager {
         hamonBurst(level, p.position().add(0.0D, 1.0D, 0.0D), 40, 0.8D);
         p.sendSystemMessage(Component.literal("You learned the Spin!").withStyle(s -> s.withColor(0xE8C25A).withBold(true)));
         p.sendSystemMessage(Component.literal("  Hold Q while holding any item, then tap Q fast when the cue appears. Practice to get better: master it to spin Steel Balls."));
+        p.sendSystemMessage(Component.literal("  The Steel Ball recipe is now in your recipe book.").withStyle(s -> s.withColor(0xC9C9C9)));
+        p.awardRecipesByKey(java.util.List.of(com.mobstands.MobStands.id("steel_ball")));
         return true;
     }
 
@@ -2355,6 +2376,7 @@ public final class StandManager {
             if (e instanceof net.minecraft.world.entity.monster.EnderMan && exposure % 10 == 0) {
                 // Water hurts Endermen: any rain from the Squid burns them like real rain does (even the harmless Downpour).
                 e.invulnerableTime = 0;
+                StandCombat.credit(p, e);
                 e.hurt(sl.damageSources().drown(), storm ? 2.0F : 1.0F);
                 sl.sendParticles(ParticleTypes.PORTAL, e.getX(), e.getY() + e.getBbHeight() * 0.6D, e.getZ(), 10, 0.3D, 0.6D, 0.3D, 0.3D);
             }
@@ -2376,8 +2398,10 @@ public final class StandManager {
             if (exposure >= delay && (exposure - delay) % interval == 0) {
                 e.invulnerableTime = 0;
                 double dmg = storm ? 2.0D + (exposure - delay) / 25.0D : 0.4D + (exposure - delay) / 200.0D; // grows the longer they stay
+                // No knockback: the rain only hurts while they stand under it, so it must never push them out.
+                Vec3 keep = e.getDeltaMovement();
                 StandCombat.hurt(p, e, ctx.dmg(dmg));
-                e.setDeltaMovement(e.getDeltaMovement().multiply(storm ? 0.6D : 0.85D, 1.0D, storm ? 0.6D : 0.85D).add(0.0D, storm ? -0.25D : -0.08D, 0.0D));
+                e.setDeltaMovement(keep.multiply(storm ? 0.6D : 0.85D, 1.0D, storm ? 0.6D : 0.85D).add(0.0D, storm ? -0.25D : -0.08D, 0.0D));
                 e.hurtMarked = true;
                 if (storm || (exposure - delay) % 9 == 0) {
                     sl.playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.4F, 1.4F);

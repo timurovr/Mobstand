@@ -28,7 +28,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Gilded Silence (Piglin Requiem): steal a creature's sound and, with it, the power that sound came with.
+ * Pigstep (Piglin Requiem): steal a creature's sound and, with it, the power that sound came with.
  * Stolen sounds are kept in {@link StandData#stolenSounds} (entity type ids, or "thunder"), up to {@link #MAX}.
  */
 public final class SoundSteal {
@@ -75,6 +75,24 @@ public final class SoundSteal {
             c.later(14, () -> c.sound(SoundEvents.SCULK_CLICKING_STOP, 1.0F, 1.2F));
             add(p, c.data, id);
         });
+        return true;
+    }
+
+    /** Pigstep's Steal menu took its Sound: your Stand now holds just that (it replaces whatever it held). */
+    public static boolean take(ServerPlayer p, LivingEntity target) {
+        if (target instanceof Player || target.getTags().contains(SILENCED)) {
+            p.displayClientMessage(Component.literal(target instanceof Player ? "You can't steal that." : "It has no sound left to steal."), true);
+            return false;
+        }
+        ServerLevel sl = p.serverLevel();
+        String id = BuiltInRegistries.ENTITY_TYPE.getKey(target.getType()).toString();
+        silence(target, sl.getGameTime());
+        Vec3 from = target.position().add(0.0D, target.getBbHeight() * 0.7D, 0.0D);
+        sl.sendParticles(ParticleTypes.ANGRY_VILLAGER, from.x, from.y + 0.4D, from.z, 3, 0.25D, 0.15D, 0.25D, 0.0D);
+        sl.playSound(null, target.getX(), target.getY(), target.getZ(), SoundEvents.SCULK_CLICKING, SoundSource.PLAYERS, 1.2F, 1.0F);
+        StandData d = StandManager.data(p);
+        d.stolenSounds.clear();
+        add(p, d, id);
         return true;
     }
 

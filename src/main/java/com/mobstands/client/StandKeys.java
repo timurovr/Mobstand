@@ -21,6 +21,8 @@ public final class StandKeys {
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_C, CATEGORY);
     public static final KeyMapping ABILITY4 = new KeyMapping("key.mobstands.ability4", KeyConflictContext.IN_GAME,
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, CATEGORY);
+    public static final KeyMapping ABILITY5 = new KeyMapping("key.mobstands.ability5", KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, CATEGORY);
     public static final KeyMapping POSE = new KeyMapping("key.mobstands.pose", KeyConflictContext.IN_GAME,
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, CATEGORY);
     public static final KeyMapping INFO = new KeyMapping("key.mobstands.info", KeyConflictContext.IN_GAME,

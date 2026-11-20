@@ -60,6 +60,8 @@ public record StandActionPayload(int action) implements CustomPacketPayload {
                 com.mobstands.stand.HorseSpin.retrieve(sp); // take your Steel Balls back off your horse
             } else if (payload.action() == 30) {
                 com.mobstands.stand.Ger.skip(sp); // skip GER's Return to Zero cutscene
+            } else if (payload.action() == 25) {
+                StandManager.use(sp, 5); // the 6th ability key (B)
             } else if (payload.action() == 24) {
                 StandManager.use(sp, 4); // the 5th ability key (V)
             } else if (payload.action() == 23) {
