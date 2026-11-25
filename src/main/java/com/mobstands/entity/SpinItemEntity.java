@@ -123,8 +123,10 @@ public class SpinItemEntity extends Entity {
 
     /** A plain dropped item (a Steel Ball on the ground) pulled back from afar: it becomes a ball flying home. */
     public static void recallItem(ServerPlayer p, ItemEntity ie) {
+        if (!ie.isAlive() || ie.getItem().isEmpty()) return; // already picked up / recalled this tick
         SpinItemEntity si = new SpinItemEntity(com.mobstands.registry.ModEntities.SPIN_ITEM.get(), ie.level());
         si.setup(p, ie.getItem().copy(), 1.0F);
+        ie.setItem(ItemStack.EMPTY);
         si.setPos(ie.getX(), ie.getY(), ie.getZ());
         si.returns = true;
         si.restingReturn = true;
@@ -141,6 +143,7 @@ public class SpinItemEntity extends Entity {
 
     /** Called back from far away (right-click on it): it drops whatever it's doing and comes home. */
     public boolean recall() {
+        if (claimed || isRemoved()) return false;
         if (!thrown && !returning && stuckAt < 0L && sensed == null) {
             // Lying on the floor (dropped, or wound down): it hops up and comes home.
             returns = true;
@@ -229,13 +232,16 @@ public class SpinItemEntity extends Entity {
             return true;
         }
         if ((now - stuckAt) % PULSE != 0) return true;
-        // A pulse: every enemy nearby gives off a vibration it can feel - moving ones twice as much.
+        // A pulse: every enemy (or player who isn't sneaking) nearby gives off a vibration it can feel - moving ones twice as much.
         sl.playSound(null, getX(), getY(), getZ(), SoundEvents.SCULK_CLICKING, SoundSource.PLAYERS, 0.7F, 1.4F);
         LivingEntity best = null;
         int bestCount = 0;
         for (LivingEntity e : sl.getEntitiesOfClass(LivingEntity.class, getBoundingBox().inflate(SENSE_RANGE),
                 x -> x != tp && x.isAlive() && StandCombat.valid(tp, x)
-                        && x instanceof net.minecraft.world.entity.monster.Enemy)) { // only evil mobs
+                        // Evil mobs - and other players, unless they're sneaking: crouching makes no vibrations,
+                        // like creeping past a sculk sensor.
+                        && (x instanceof net.minecraft.world.entity.monster.Enemy
+                            || (x instanceof net.minecraft.world.entity.player.Player pl && !pl.isShiftKeyDown())))) {
             Vec3 was = lastSeen.put(e.getUUID(), e.position());
             boolean moving = was != null && was.distanceToSqr(e.position()) > 0.01D;
             int c = vibes.merge(e.getUUID(), moving ? 2 : 1, Integer::sum);
@@ -467,9 +473,24 @@ public class SpinItemEntity extends Entity {
         }
     }
 
+    /**
+     * Has this ball already been handed back / turned into a dropped item? Every path that gives the ball away claims
+     * it first, so the same ball can never come back twice in one tick (that duplicated Steel Balls).
+     */
+    private boolean claimed;
+
+    /** Claim the ball (once): true the first time, false if it's already been given away. */
+    private boolean claim() {
+        if (claimed || isRemoved() || getItem().isEmpty()) return false;
+        claimed = true;
+        return true;
+    }
+
     /** Back in your hand (or inventory). */
     private void giveBack(ServerPlayer p) {
+        if (!claim()) return;
         ItemStack stack = getItem().copy();
+        setItem(ItemStack.EMPTY); // the ball is out of this entity now
         net.minecraft.world.InteractionHand ih = offHand ? net.minecraft.world.InteractionHand.OFF_HAND : net.minecraft.world.InteractionHand.MAIN_HAND;
         ItemStack hand = p.getItemInHand(ih);
         boolean inHand = false;
@@ -544,6 +565,11 @@ public class SpinItemEntity extends Entity {
 
     public ItemStack getItem() {
         return entityData.get(ITEM);
+    }
+
+    /** Empties the ball out of this entity once it's been handed back (so it can't be handed back again). */
+    private void setItem(ItemStack stack) {
+        entityData.set(ITEM, stack);
     }
 
     public float power() {
@@ -704,7 +730,9 @@ public class SpinItemEntity extends Entity {
                 return;
             }
             // Wound down: an ordinary item again.
+            if (!claim()) return;
             ItemEntity ie = new ItemEntity(sl, getX(), getY(), getZ(), getItem().copy());
+            setItem(ItemStack.EMPTY);
             ie.setDeltaMovement(Vec3.ZERO);
             ie.setPickUpDelay(10);
             sl.addFreshEntity(ie);
@@ -770,7 +798,9 @@ public class SpinItemEntity extends Entity {
     public net.minecraft.world.InteractionResult interact(net.minecraft.world.entity.player.Player player, net.minecraft.world.InteractionHand hand) {
         if (!isAlive() || getItem().isEmpty()) return net.minecraft.world.InteractionResult.PASS;
         if (!level().isClientSide) {
+            if (!claim()) return net.minecraft.world.InteractionResult.PASS;
             ItemStack stack = getItem().copy();
+            setItem(ItemStack.EMPTY);
             if (!player.getInventory().add(stack)) player.drop(stack, false);
             level().playSound(null, getX(), getY(), getZ(), SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.4F,
                     ((random.nextFloat() - random.nextFloat()) * 0.7F + 1.0F) * 2.0F);

@@ -16,11 +16,17 @@ public class MobStandsClient {
         modBus.addListener(ClientSetup::registerGuiLayers);
         modBus.addListener(ClientSetup::registerParticles);
         NeoForge.EVENT_BUS.register(ClientEvents.class);
+        NeoForge.EVENT_BUS.register(HeartStopHud.class);
+        NeoForge.EVENT_BUS.register(ZipperFx.class);
+        NeoForge.EVENT_BUS.register(TimeHeld.class);
+        NeoForge.EVENT_BUS.register(GooFx.class);
+        NeoForge.EVENT_BUS.register(IllusionFx.class);
         NeoForge.EVENT_BUS.register(CartRide.class);
         NeoForge.EVENT_BUS.register(GerCutscene.class);
         NeoForge.EVENT_BUS.register(LoveTrainFx.class);
         NeoForge.EVENT_BUS.register(HorseBalls.class);
         NeoForge.EVENT_BUS.register(GravityClient.class);
+        NeoForge.EVENT_BUS.register(GravityFlick.class);
         NeoForge.EVENT_BUS.register(RainClient.class);
         NeoForge.EVENT_BUS.register(FuseClient.class);
         NeoForge.EVENT_BUS.register(ClashClient.class);

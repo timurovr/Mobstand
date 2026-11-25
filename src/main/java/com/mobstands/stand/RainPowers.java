@@ -97,6 +97,13 @@ public final class RainPowers {
         }
         boolean wet = dolphin && wet(p);
         boolean airborne = !p.onGround() && p.level().noCollision(p, p.getBoundingBox().move(0.0D, -0.3D, 0.0D)) && !p.isInWater();
+        // Up on the raindrops (no real ground under you): you're riding your Dolphin, surfing the rain.
+        com.mobstands.entity.StandEntity stand = dolphin ? StandManager.getStand(p) : null;
+        if (stand != null) {
+            boolean onDrops = d.rainWalk && wet && !p.isInWater() && !p.isShiftKeyDown() && !p.isPassenger()
+                    && p.level().noCollision(p, p.getBoundingBox().move(0.0D, -0.3D, 0.0D));
+            stand.setCartRide(onDrops);
+        }
         if (d.rainWalk && wet) {
             SAVED.remove(p.getUUID());
             p.fallDistance = 0.0F;

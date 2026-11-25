@@ -544,7 +544,7 @@ public final class PropertySwap {
         later.add(() -> {
             if (giver != null) for (LivingEntity o : sl.getEntitiesOfClass(LivingEntity.class, le.getBoundingBox().inflate(4.0D))) StandCombat.credit(giver, o);
             sl.explode(le, at.x, at.y, at.z, 3.0F, net.minecraft.world.level.Level.ExplosionInteraction.MOB); // a creeper's blast
-            if (le.isAlive()) le.kill();
+            if (le.isAlive() && !(le instanceof net.minecraft.world.entity.player.Player)) le.kill(); // (a player just takes the blast)
         });
         return true;
     }

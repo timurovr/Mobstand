@@ -32,6 +32,20 @@ public final class StandCommands {
                         .then(Commands.argument("level", IntegerArgumentType.integer(1, StandData.MAX_LEVEL))
                                 .executes(StandCommands::level)))
                 .then(Commands.literal("clear").executes(StandCommands::clear))
+                // Random road encounters (testing): /stand encounter party|solo
+                .then(Commands.literal("encounter")
+                        .then(Commands.literal("party").executes(ctx -> encounter(ctx, false)))
+                        .then(Commands.literal("solo").executes(ctx -> encounter(ctx, true))))
+                // Test Evokers (only ever from this command): /stand evoker timestop|rewind
+                .then(Commands.literal("evoker")
+                        .then(Commands.literal("timestop").executes(ctx -> {
+                            com.mobstands.stand.TimeEvoker.spawnTest(ctx.getSource().getPlayerOrException());
+                            return 1;
+                        }))
+                        .then(Commands.literal("rewind").executes(ctx -> {
+                            com.mobstands.stand.RewindEvoker.spawnTest(ctx.getSource().getPlayerOrException());
+                            return 1;
+                        })))
                 // Requiem Stands: show or hide the rising aura.
                 .then(Commands.literal("aura")
                         .then(Commands.literal("on").executes(ctx -> setAura(ctx, true)))
@@ -71,6 +85,15 @@ public final class StandCommands {
                                     ctx.getSource().sendSuccess(() -> Component.literal("Spin level set to " + d.spinLevel), false);
                                     return 1;
                                 })))));
+    }
+
+    private static int encounter(CommandContext<CommandSourceStack> ctx, boolean solo) throws CommandSyntaxException {
+        ServerPlayer p = ctx.getSource().getPlayerOrException();
+        if (!com.mobstands.stand.Encounters.start(p, solo)) {
+            ctx.getSource().sendFailure(Component.literal("Couldn't start one here (already in one, or no open ground nearby)."));
+            return 0;
+        }
+        return 1;
     }
 
     private static int setDark(CommandContext<CommandSourceStack> ctx, boolean on) throws CommandSyntaxException {

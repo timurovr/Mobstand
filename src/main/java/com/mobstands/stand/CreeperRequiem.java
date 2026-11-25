@@ -32,6 +32,17 @@ public final class CreeperRequiem {
 
     // ---- Primer ----
 
+    /** Heart Attack (Passive) tags a mob: it joins your Primer bombs, waiting for the click. */
+    public static void addPrimed(ServerPlayer p, LivingEntity t) {
+        PRIMED.computeIfAbsent(p.getUUID(), k -> new HashSet<>()).add(t.getUUID());
+    }
+
+    /** Is this mob anyone's primed bomb? */
+    public static boolean isPrimed(Entity e) {
+        for (Set<UUID> set : PRIMED.values()) if (set.contains(e.getUUID())) return true;
+        return false;
+    }
+
     public static boolean primer(AbilityContext c) {
         ServerPlayer p = c.owner;
         ServerLevel sl = c.level;
@@ -53,10 +64,12 @@ public final class CreeperRequiem {
             p.displayClientMessage(Component.literal("Look at a mob to prime it.").withStyle(s -> s.withColor(0x7FD4FF)), true);
             return false;
         }
-        // Click: every primed mob goes off.
+        // Click: every primed mob goes off. Shift + click: and they really blow up - a true blast that tears up
+        // the area and hurts everything around them (never you).
+        boolean loud = p.isShiftKeyDown();
         sl.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.STONE_BUTTON_CLICK_OFF, SoundSource.PLAYERS, 1.5F, 0.5F);
         for (UUID u : set) {
-            if (sl.getEntity(u) instanceof LivingEntity le && le.isAlive()) vaporize(c, le);
+            if (sl.getEntity(u) instanceof LivingEntity le && le.isAlive()) vaporize(c, le, loud);
         }
         set.clear();
         return true;
@@ -67,21 +80,35 @@ public final class CreeperRequiem {
      * no drops - a flash, a muffled thump, a wisp of smoke, and it's simply gone. (Players and bosses can't just
      * vanish: they take a huge hit instead.)
      */
-    private static void vaporize(AbilityContext c, LivingEntity le) {
+    /** Bumped by every Bites the Dust: a detonation still fizzing when time winds back never goes off. */
+    private static int rewinds;
+    /** Mobs fizzing right now (so a rewind can put out their fuses). */
+    private static final Set<LivingEntity> FUSING = new HashSet<>();
+
+    /** Time wound back: every Primer bomb still on its fuse is put out - those blasts never happen. */
+    public static void defuseAll() {
+        rewinds++;
+        for (LivingEntity le : FUSING) if (le.isAlive() && !le.isRemoved()) sendFuse(le, 0);
+        FUSING.clear();
+    }
+
+    private static void vaporize(AbilityContext c, LivingEntity le, boolean loud) {
         ServerLevel sl = c.level;
+        final int gen = rewinds;
+        FUSING.add(le);
         // The fuse: it swells with sparks and flickers, a hiss rising, for about a second...
         sl.playSound(null, le.getX(), le.getY(), le.getZ(), SoundEvents.CREEPER_PRIMED, SoundSource.PLAYERS, 1.8F, 0.6F);
         // It swells up and flashes white, wobbling, exactly like a creeper about to blow.
         for (int i = 0; i <= 20; i++) {
             final int fuse = 1 + Math.round(i * (PropertySwap.FUSE - 3) / 20.0F);
             TickScheduler.later(i, () -> {
-                if (le.isAlive() && !le.isRemoved()) sendFuse(le, fuse);
+                if (gen == rewinds && le.isAlive() && !le.isRemoved()) sendFuse(le, fuse);
             });
         }
         for (int i = 0; i < 20; i += 2) {
             final int k = i;
             TickScheduler.later(i, () -> {
-                if (!le.isAlive()) return;
+                if (gen != rewinds || !le.isAlive()) return;
                 Vec3 m = le.position().add(0.0D, le.getBbHeight() * 0.5D, 0.0D);
                 sl.sendParticles(ParticleTypes.ELECTRIC_SPARK, m.x, m.y, m.z, 4 + k, le.getBbWidth() * 0.5D, le.getBbHeight() * 0.4D, le.getBbWidth() * 0.5D, 0.05D);
                 if (k % 6 == 0) sl.sendParticles(ParticleTypes.FLASH, m.x, m.y, m.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
@@ -91,9 +118,14 @@ public final class CreeperRequiem {
         // ...then the big, slow blast - fireball, shockwave, mushroom cloud - and it's simply gone. The blast is only
         // a show: no blocks break, nobody else is hurt, nothing is left of it.
         TickScheduler.later(20, () -> {
-            if (!le.isAlive() || le.isRemoved()) return;
+            FUSING.remove(le);
+            if (gen != rewinds || !le.isAlive() || le.isRemoved()) return; // (wound back before it went off)
             sendFuse(le, 0);
-            AbilityContext.bigBlastFx(sl, le.position().add(0.0D, le.getBbHeight() * 0.5D, 0.0D), 2.8D);
+            Vec3 at = le.position().add(0.0D, le.getBbHeight() * 0.5D, 0.0D);
+            AbilityContext.bigBlastFx(sl, at, 2.8D);
+            AbilityContext.juicyBlastFx(sl, at, 2.8D, true);
+            // Shift: a real explosion - blocks (if Stand block damage is on) and everyone around it, but never you.
+            if (loud) c.explode(at, 3.5D);
             boolean vanish = !(le instanceof net.minecraft.world.entity.player.Player)
                     && !(le instanceof net.minecraft.world.entity.boss.wither.WitherBoss)
                     && !(le instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon);
@@ -144,42 +176,34 @@ public final class CreeperRequiem {
         for (Map.Entry<UUID, Long> e : hurt.entrySet()) if (now - e.getValue() <= Mandom.WINDOW) marked.add(e.getKey());
         if (!Mandom.rewind(p)) return false;
         HURT_BY.remove(p.getUUID());
+        // Bombs still fizzing are put out the moment it starts winding back.
+        defuseAll();
         // The Stand blew itself up in those seconds? That's undone too.
         c.later(Mandom.WIND_TICKS, () -> c.stand.endReform());
-        // The thumb on the switch: one hard, heavy click - then a charged creeper's low hiss and a deep drone sinking.
+        // The whole sound in one: the switch, a clock ticking backwards over a tape-rewind squeal and a sinking
+        // drone, a heartbeat, then the snap (timed to land on WIND_TICKS).
         Vec3 at = c.stand.position();
-        sl.playSound(null, at.x, at.y, at.z, SoundEvents.STONE_BUTTON_CLICK_ON, SoundSource.PLAYERS, 2.0F, 0.5F);
-        sl.playSound(null, at.x, at.y, at.z, SoundEvents.LEVER_CLICK, SoundSource.PLAYERS, 1.6F, 0.6F);
+        sl.playSound(null, at.x, at.y, at.z, com.mobstands.registry.ModSounds.BITES_THE_DUST.get(), SoundSource.PLAYERS, 2.5F, 1.0F);
+        // ...and the creeper in it: a deep hiss as the switch is pressed, a second, higher one as the rewind peaks,
+        // and a real creeper blast on the snap.
         sl.playSound(null, at.x, at.y, at.z, SoundEvents.CREEPER_PRIMED, SoundSource.PLAYERS, 2.0F, 0.5F);
-        sl.playSound(null, at.x, at.y, at.z, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 2.0F, 0.5F);
-        sl.playSound(null, at.x, at.y, at.z, SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.PLAYERS, 1.4F, 0.5F);
-        sl.playSound(null, at.x, at.y, at.z, SoundEvents.TRIDENT_THUNDER.value(), SoundSource.PLAYERS, 0.6F, 1.6F);
-        // A clock ticking backwards - faster and faster, lower and lower - under a slow heartbeat.
-        int t = 0, gap = 5, n0 = 0;
+        c.later(Mandom.WIND_TICKS - 10, () -> {
+            Vec3 s = c.stand.position();
+            sl.playSound(null, s.x, s.y, s.z, SoundEvents.CREEPER_PRIMED, SoundSource.PLAYERS, 1.8F, 1.0F);
+        });
+        // Sparks spiralling in, faster and faster, as the clock winds back.
+        int t = 0, gap = 5;
         while (t < Mandom.WIND_TICKS - 1) {
             final int k = t;
-            final float pitch = Math.max(0.5F, 1.4F - n0 * 0.12F);
-            c.later(k, () -> {
-                Vec3 s = c.stand.position();
-                sl.playSound(null, s.x, s.y, s.z, SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 1.4F, pitch);
-                sl.playSound(null, s.x, s.y, s.z, SoundEvents.WOODEN_BUTTON_CLICK_OFF, SoundSource.PLAYERS, 0.9F, pitch * 0.8F);
-                c.ring(ParticleTypes.ELECTRIC_SPARK, s.add(0.0D, 0.8D, 0.0D), 1.0D + k * 0.08D, 14);
-            });
+            c.later(k, () -> c.ring(ParticleTypes.ELECTRIC_SPARK, c.stand.position().add(0.0D, 0.8D, 0.0D), 1.0D + k * 0.08D, 14));
             t += gap;
             gap = Math.max(2, gap - 1);
-            n0++;
         }
-        for (int h = 0; h < Mandom.WIND_TICKS; h += 10) {
-            c.later(h, () -> sl.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS, 1.6F, 0.6F));
-        }
-        // The snap: a swallowed boom, a sonic crack and the elder guardian's curse - time is back where it was.
         c.later(Mandom.WIND_TICKS, () -> {
             Vec3 s = p.position();
-            sl.playSound(null, s.x, s.y, s.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 1.4F, 0.4F);
-            sl.playSound(null, s.x, s.y, s.z, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 1.2F, 0.6F);
-            sl.playSound(null, s.x, s.y, s.z, SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.PLAYERS, 0.9F, 0.7F);
-            sl.playSound(null, s.x, s.y, s.z, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundSource.PLAYERS, 2.0F, 0.5F);
+            sl.playSound(null, s.x, s.y, s.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 1.2F, 0.7F);
             sl.sendParticles(ParticleTypes.FLASH, s.x, s.y + 1.0D, s.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+            sl.sendParticles(ParticleTypes.ELECTRIC_SPARK, s.x, s.y + 1.0D, s.z, 50, 0.2D, 0.3D, 0.2D, 0.6D);
         });
         c.later(Mandom.WIND_TICKS + 6, () -> {
             for (UUID u : marked) {
@@ -214,6 +238,7 @@ public final class CreeperRequiem {
 
     public static void clear() {
         PRIMED.clear();
+        FUSING.clear();
         HURT_BY.clear();
     }
 }

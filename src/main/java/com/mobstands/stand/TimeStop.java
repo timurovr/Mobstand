@@ -52,6 +52,37 @@ public final class TimeStop {
     }
 
     private static final List<Zone> ZONES = new ArrayList<>();
+
+    /** The running clock every dimension without a Time Stop gets while one is stopped elsewhere. */
+    public static final net.minecraft.world.TickRateManager NORMAL = new net.minecraft.world.TickRateManager();
+    /** What each player's game was last told: frozen or not (only their own dimension's state). */
+    private static final Map<UUID, Boolean> CLIENT_FROZEN = new HashMap<>();
+    private static int lastSyncTick = -1;
+
+    /** Is time stopped in this dimension? */
+    public static boolean stoppedIn(net.minecraft.world.level.Level level) {
+        for (Zone z : ZONES) if (z.level == level) return true;
+        return false;
+    }
+
+    /** Time is stopped by a Stand (not an admin's /tick freeze): only its own dimension should be frozen. */
+    public static boolean perDimension() {
+        return serverStopped && !wasFrozenBefore;
+    }
+
+    /** Tell each player's game whether *their* dimension is frozen (the server's own message says "everything"). */
+    private static void syncClients(net.minecraft.server.MinecraftServer server) {
+        if (!perDimension()) return;
+        float rate = server.tickRateManager().tickrate();
+        for (ServerPlayer pl : server.getPlayerList().getPlayers()) {
+            boolean want = stoppedIn(pl.level());
+            Boolean had = CLIENT_FROZEN.get(pl.getUUID());
+            if (had == null || had != want) {
+                pl.connection.send(new net.minecraft.network.protocol.game.ClientboundTickingStatePacket(rate, want));
+                CLIENT_FROZEN.put(pl.getUUID(), want);
+            }
+        }
+    }
     private static boolean releasing;
     /** Whether the game was already frozen (someone used /tick freeze) before time was stopped. */
     private static boolean wasFrozenBefore;
@@ -61,9 +92,41 @@ public final class TimeStop {
         return 80 + Math.min(100, Math.max(0, level - 1) * 11);
     }
 
-    public static boolean active(ServerPlayer p) {
+    public static boolean active(LivingEntity p) {
         for (Zone z : ZONES) if (z.owner.equals(p.getUUID())) return true;
         return false;
+    }
+
+    /** Clients: entity ids of mobs (and their Stands) that can move in stopped time (see TimeEvoker). */
+    public static final java.util.Set<Integer> CLIENT_MOVERS = new java.util.HashSet<>();
+
+    /** A creature stops time (no Stand data to sync, just the freeze itself, and the sound of it). */
+    public static boolean start(LivingEntity p, int ticks) {
+        if (p instanceof ServerPlayer sp) return start(sp, ticks);
+        if (active(p)) return false;
+        ServerLevel level = (ServerLevel) p.level();
+        if (ZONES.isEmpty()) {
+            wasFrozenBefore = level.getServer().tickRateManager().isFrozen();
+            serverStopped = true;
+            NORMAL.setTickRate(level.getServer().tickRateManager().tickrate());
+            level.getServer().tickRateManager().setFrozen(true);
+            CLIENT_FROZEN.clear();
+            for (ServerPlayer pl : level.getServer().getPlayerList().getPlayers()) CLIENT_FROZEN.put(pl.getUUID(), true);
+        }
+        ZONES.add(new Zone(p.getUUID(), level, p.position(), ticks));
+        syncClients(level.getServer());
+        level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.GOAT_HORN_SOUND_VARIANTS.get(5).value(), SoundSource.HOSTILE, 1.6F, 0.85F);
+        level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.BELL_BLOCK, SoundSource.HOSTILE, 2.0F, 0.5F);
+        level.playSound(null, p.getX(), p.getY(), p.getZ(), com.mobstands.registry.ModSounds.TIME_STOP.get(), SoundSource.HOSTILE, 2.0F, 1.0F);
+        level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.BEACON_DEACTIVATE, SoundSource.HOSTILE, 1.5F, 0.5F);
+        level.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.HOSTILE, 0.8F, 1.6F);
+        return true;
+    }
+
+    /** How long this creature's current stop has run (-1: it isn't stopping time). */
+    public static int elapsed(LivingEntity p) {
+        for (Zone z : ZONES) if (z.owner.equals(p.getUUID())) return z.elapsed;
+        return -1;
     }
 
     public static boolean start(ServerPlayer p, int ticks) {
@@ -72,10 +135,15 @@ public final class TimeStop {
         if (ZONES.isEmpty()) {
             wasFrozenBefore = level.getServer().tickRateManager().isFrozen();
             serverStopped = true;
+            NORMAL.setTickRate(level.getServer().tickRateManager().tickrate());
             level.getServer().tickRateManager().setFrozen(true);
+            // The server just told everyone "frozen" - everyone outside this dimension gets told otherwise.
+            CLIENT_FROZEN.clear();
+            for (ServerPlayer pl : level.getServer().getPlayerList().getPlayers()) CLIENT_FROZEN.put(pl.getUUID(), true);
         }
         long now = level.getGameTime();
         ZONES.add(new Zone(p.getUUID(), level, p.position(), ticks));
+        syncClients(level.getServer());
         StandData d = StandManager.data(p);
         d.timeStopStart = now;           // identifies this stop (the game clock itself stops now)
         d.timeStopEnd = now + ticks;     // start + how long it lasts
@@ -103,8 +171,18 @@ public final class TimeStop {
      * player rides already do (vanilla); on top of that, players' Stands.
      */
     public static boolean keepsMoving(Entity e) {
+        // The Evoker that can stop time (and its Stand) move in anyone's stopped time.
+        if (e.level().isClientSide) {
+            if (!CLIENT_MOVERS.isEmpty() && CLIENT_MOVERS.contains(e.getId())) return true;
+        } else if (serverStopped && TimeEvoker.moves(e)) return true;
         if (!(e.level().isClientSide ? clientStopped : serverStopped)) return false;
-        if (e instanceof StandEntity s) return !s.isMobStand();
+        if (e instanceof StandEntity s) {
+            if (s.isMobStand()) return false;
+            // a frozen player's Stand is frozen with them
+            if (!e.level().isClientSide && !ZONES.isEmpty() && s.getOwnerUUID().isPresent()
+                    && e.level().getPlayerByUUID(s.getOwnerUUID().get()) instanceof ServerPlayer op && held(op)) return false;
+            return true;
+        }
         return false;
     }
 
@@ -167,7 +245,14 @@ public final class TimeStop {
         // The freeze stops the game clock too - and everything that runs on it (your Stand's floating and punching,
         // ability cooldowns) would stall and stutter. Keep the clock going; the sun and moon stay put (the time of
         // day isn't touched), and everything frozen stays frozen.
-        if (serverStopped && level.getServer().getTickCount() != lastClockTick && !level.tickRateManager().runsNormally()) {
+        // Keep each player's game told the right thing (once per server tick).
+        if (level.getServer().getTickCount() != lastSyncTick) {
+            lastSyncTick = level.getServer().getTickCount();
+            syncClients(level.getServer());
+        }
+        // (Only when the Overworld itself is stopped: otherwise it keeps the clock running on its own.)
+        if (serverStopped && stoppedIn(level.getServer().overworld()) && level.getServer().getTickCount() != lastClockTick
+                && !level.tickRateManager().runsNormally()) {
             lastClockTick = level.getServer().getTickCount();
             var data = level.getServer().getWorldData().overworldData();
             data.setGameTime(data.getGameTime() + 1L);
@@ -176,7 +261,8 @@ public final class TimeStop {
         while (it.hasNext()) {
             Zone z = it.next();
             if (z.level != level) continue;
-            ServerPlayer owner = level.getServer().getPlayerList().getPlayer(z.owner);
+            LivingEntity owner = level.getServer().getPlayerList().getPlayer(z.owner);
+            if (owner == null && level.getEntity(z.owner) instanceof LivingEntity le) owner = le;
             z.elapsed++;
             if (z.elapsed >= z.length || owner == null || !owner.isAlive() || owner.level() != level) {
                 it.remove();
@@ -188,16 +274,22 @@ public final class TimeStop {
     }
 
     /** Other players are still "ticking" in a frozen game: hold anyone near you exactly where they were. */
-    private static void holdPlayers(Zone z, ServerPlayer owner) {
+    private static void holdPlayers(Zone z, LivingEntity owner) {
         for (ServerPlayer sp : z.level.players()) {
-            if (sp == owner || sp.isSpectator() || sp.isCreative() || ZONES.stream().anyMatch(o -> o.owner.equals(sp.getUUID()))) continue;
-            if (!z.heldPlayers.containsKey(sp) && sp.position().distanceToSqr(z.center) <= RADIUS * RADIUS) z.heldPlayers.put(sp, sp.position());
+            // Everyone in this world is caught - Creative or not, however far away (the whole world is stopped).
+            // Only spectators, and anyone else who's stopping time themselves, can move in it.
+            if (sp == owner || sp.isSpectator() || ZONES.stream().anyMatch(o -> o.owner.equals(sp.getUUID()))) continue;
+            if (!z.heldPlayers.containsKey(sp)) {
+                z.heldPlayers.put(sp, sp.position());
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(sp, new com.mobstands.network.TimeHeldPayload(true));
+            }
         }
         for (Map.Entry<ServerPlayer, Vec3> en : z.heldPlayers.entrySet()) {
             ServerPlayer sp = en.getKey();
             Vec3 at = en.getValue();
             if (sp.isRemoved() || sp.level() != z.level) continue;
             sp.setDeltaMovement(Vec3.ZERO);
+            if (sp.isUsingItem()) sp.stopUsingItem(); // no finishing that bite of food
             if (sp.position().distanceToSqr(at) > 0.0025D) sp.connection.teleport(at.x, at.y, at.z, sp.getYRot(), sp.getXRot());
         }
         // Tick... tock... (faster in the last second)
@@ -210,15 +302,30 @@ public final class TimeStop {
     }
 
     /** Time moves again: everything resumes exactly where it was, and the stored damage all lands at once. */
-    private static void release(Zone z, ServerPlayer owner) {
+    /** Is this player caught (held still) in someone's stopped time? */
+    public static boolean held(net.minecraft.world.entity.player.Player p) {
+        if (ZONES.isEmpty() || !(p instanceof ServerPlayer sp)) return false;
+        for (Zone z : ZONES) if (z.heldPlayers.containsKey(sp)) return true;
+        return false;
+    }
+
+    private static void release(Zone z, LivingEntity owner) {
+        for (ServerPlayer sp : z.heldPlayers.keySet()) {
+            if (!sp.isRemoved()) net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(sp, new com.mobstands.network.TimeHeldPayload(false));
+        }
         if (ZONES.isEmpty()) {
             serverStopped = false;
-            if (!wasFrozenBefore) z.level.getServer().tickRateManager().setFrozen(false);
+            if (!wasFrozenBefore) z.level.getServer().tickRateManager().setFrozen(false); // (tells everyone "running")
+            CLIENT_FROZEN.clear();
+        } else {
+            syncClients(z.level.getServer()); // this dimension runs again; the others' stops carry on
         }
         if (owner != null) {
-            StandData d = StandManager.data(owner);
-            d.timeStopEnd = d.timeStopStart + z.elapsed; // how long it actually lasted
-            StandManager.sync(owner);
+            if (owner instanceof ServerPlayer op) {
+                StandData d = StandManager.data(op);
+                d.timeStopEnd = d.timeStopStart + z.elapsed; // how long it actually lasted
+                StandManager.sync(op);
+            }
             z.level.playSound(null, owner.getX(), owner.getY(), owner.getZ(), SoundEvents.BELL_RESONATE, SoundSource.PLAYERS, 1.5F, 1.4F);
             z.level.playSound(null, owner.getX(), owner.getY(), owner.getZ(), SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 1.2F, 1.6F);
         }
@@ -240,6 +347,7 @@ public final class TimeStop {
 
     public static void clear() {
         ZONES.clear();
+        CLIENT_FROZEN.clear();
         serverStopped = false;
     }
 }

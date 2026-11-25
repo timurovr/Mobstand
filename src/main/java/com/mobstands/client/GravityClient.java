@@ -56,6 +56,9 @@ public final class GravityClient {
     private static float inFwd, inStrafe;
     private static boolean inJump, inSneak;
     private static int switchCooldown;
+    private static boolean sprinting;
+    /** Were you standing on your floor last tick? (Walking off its edge wraps you round the corner.) */
+    private static boolean wasLanded;
 
     public static void onPayload(int entityId, int dir) {
         Minecraft mc = Minecraft.getInstance();
@@ -197,6 +200,10 @@ public final class GravityClient {
         in.forwardImpulse = 0.0F;
         in.leftImpulse = 0.0F;
         in.jumping = false;
+        // No crouch pose while you're on a wall or ceiling: crouching shrinks your hitbox away from your floor, and
+        // standing back up grew it into the block (stuck, pushed out, hurt). Sneaking still slows you and stops you
+        // at edges - that's handled here, from inSneak.
+        in.shiftKeyDown = false;
     }
 
     @SubscribeEvent
@@ -220,6 +227,8 @@ public final class GravityClient {
         double vg = vel.dot(g);
         Vec3 vp = vel.subtract(g.scale(vg));
         boolean landed = !p.level().noCollision(p, p.getBoundingBox().move(g.scale(0.04D)));
+        // (Corner wrapping is switched off: walking off an edge just falls off it. Hold Shift to stop at edges.
+        // wrap() below is kept for later.)
 
         // Your walking directions, flat against your floor.
         Quaternionf qm = new Quaternionf(qs).mul(look(ly, 0.0F));
@@ -227,20 +236,29 @@ public final class GravityClient {
         Vec3 left = flat(v(qm.transform(new Vector3f(-1.0F, 0.0F, 0.0F))), g);
         Vec3 wish = fwd.scale(inFwd).add(left.scale(inStrafe));
         if (wish.lengthSqr() > 1.0D) wish = wish.normalize();
-        boolean sprint = mc.options.keySprint.isDown() && inFwd > 0.0F && !inSneak;
+        // Sprinting sticks like vanilla: start it with the sprint key, and it lasts until you stop going forward
+        // (letting go of the key, or jumping, doesn't drop it).
+        if (inFwd <= 0.0F || inSneak || p.getFoodData().getFoodLevel() <= 6) sprinting = false;
+        else if (mc.options.keySprint.isDown()) sprinting = true;
+        boolean sprint = sprinting;
         if (landed) {
             double a = 0.18D * (sprint ? 1.3D : 1.0D) * (inSneak ? 0.3D : 1.0D);
             vp = vp.add(wish.scale(a)).scale(0.546D);
             vg = inJump ? -0.42D : 0.0D;
+            // Sprint-jumping: the same forward boost vanilla gives you, so you can clear gaps.
+            if (inJump && sprint) vp = vp.add(fwd.scale(0.2D));
         } else {
             vp = vp.add(wish.scale(sprint ? 0.026D : 0.02D)).scale(0.91D);
             vg = (vg + 0.08D) * 0.98D;
         }
         if (localG == Direction.UP && p.getY() > p.level().getMaxBuildHeight() + 32) vg = Math.min(vg, 0.0D);
+        // Sneaking keeps you from walking off the edge of your wall or ceiling, just like on the ground.
+        if (landed && inSneak && vg >= 0.0D) vp = backOffEdge(p, vp, g);
         vel = vp.add(g.scale(vg));
 
         Vec3 before = p.position();
         Vec3 wanted = vel;
+        float walkBefore = p.walkDist;
         p.move(MoverType.SELF, vel);
         Vec3 moved = p.position().subtract(before);
         vel = new Vec3(Math.abs(moved.x - vel.x) > 1.0E-4D ? moved.x : vel.x,
@@ -251,6 +269,11 @@ public final class GravityClient {
         // Walk animation along your own floor (vanilla only counts flat ground, so on walls you'd just slide).
         Vec3 along = moved.subtract(g.scale(moved.dot(g)));
         p.walkAnimation.update((float) Math.min(1.0D, along.length() * 4.0D), 0.4F);
+        // Camera bobbing, like walking on the ground: count the distance along your own floor (vanilla only counts
+        // flat ground, so on a wall you'd glide), and bob while you're standing on something.
+        boolean onIt = !p.level().noCollision(p, p.getBoundingBox().move(g.scale(0.04D)));
+        p.walkDist = walkBefore + (float) along.length() * 0.6F;
+        p.bob = p.oBob + ((onIt ? (float) Math.min(0.1D, along.length()) : 0.0F) - p.oBob) * 0.4F;
 
         // (No automatic wall-switching: your gravity only ever changes when you choose it - Z or the C wheel.)
     }
@@ -268,6 +291,90 @@ public final class GravityClient {
             Vec3 along = m.subtract(g.scale(m.dot(g)));
             e.walkAnimation.update((float) Math.min(1.0D, along.length() * 4.0D), 0.4F);
         }
+    }
+
+    /**
+     * Round the corner: you've just walked past the edge of the block you were standing on. Your new floor is that
+     * block's next face (the one you walked past), and the world turns with you, like walking round a cube.
+     */
+    private static boolean wrap(LocalPlayer p, Direction oldG, Vec3 move) {
+        Vec3 g = GravityFlip.vec(oldG);
+        Vec3 mdir = move.normalize();
+        Direction newG = Direction.getNearest(-mdir.x, -mdir.y, -mdir.z);
+        if (newG.getAxis() == oldG.getAxis()) return false;
+        Vec3 nG = GravityFlip.vec(newG);
+        Vec3 mAxis = nG.scale(-1.0D); // the way you were walking
+        net.minecraft.world.phys.AABB b = p.getBoundingBox();
+        double halfG = size(b, oldG.getAxis()) * 0.5D, halfM = size(b, newG.getAxis()) * 0.5D;
+        Vec3 feet = b.getCenter().add(g.scale(halfG));
+        double fm = feet.dot(mAxis);
+        double edge = Math.floor(fm - halfM + 1.0E-3D); // the block edge you just stepped past
+        double w = p.getBbWidth(), h = p.getBbHeight();
+        // Your feet go onto the next face, half a body in from the edge.
+        Vec3 newFeet = feet.add(mAxis.scale(edge - fm)).add(g.scale(w * 0.5D + 0.05D));
+        Vec3 offset = newG == Direction.DOWN ? Vec3.ZERO
+                : newG == Direction.UP ? new Vec3(0.0D, h, 0.0D)
+                : nG.scale(w * 0.5D).add(0.0D, h * 0.5D, 0.0D);
+        Vec3 pos = newFeet.subtract(offset).subtract(nG.scale(0.01D));
+
+        // Try it: you must fit there, with the new floor right under you. Otherwise you just fall off.
+        Vec3 oldPos = p.position();
+        com.mobstands.stand.GravityBox.CLIENT.put(p.getId(), newG);
+        p.setPos(pos.x, pos.y, pos.z);
+        boolean fits = p.level().noCollision(p) && !p.level().noCollision(p, p.getBoundingBox().move(nG.scale(0.3D)));
+        if (!fits) {
+            com.mobstands.stand.GravityBox.CLIENT.put(p.getId(), oldG);
+            p.setPos(oldPos.x, oldPos.y, oldPos.z);
+            return false;
+        }
+        p.xo = p.xOld = pos.x;
+        p.yo = p.yOld = pos.y;
+        p.zo = p.zOld = pos.z;
+
+        // The view turns over the edge with you: the same look, rotated round the corner (eased by onFrame).
+        Quaternionf turn = new Quaternionf().rotationTo(g.toVector3f(), nG.toVector3f());
+        Vector3f d = new Quaternionf(qs).mul(look(ly, lp)).transform(new Vector3f(0.0F, 0.0F, -1.0F));
+        Quaternionf start = new Quaternionf(turn).conjugate().mul(GravityFlip.frame(newG));
+        Vector3f dl = new Quaternionf(start).conjugate().transform(new Vector3f(d));
+        ly = (float) Math.toDegrees(Math.atan2(-dl.x, dl.z));
+        lp = (float) Math.toDegrees(Math.asin(Mth.clamp(-dl.y, -1.0F, 1.0F)));
+        qs.set(start);
+        apply(p);
+
+        FLIPS.put(p.getId(), newG);
+        localG = newG;
+        vel = g.scale(move.length() * 0.6D); // keep walking, now across the new face
+        switchCooldown = 10;
+        PacketDistributor.sendToServer(new GravitySwitchPayload(newG.get3DDataValue()));
+        return true;
+    }
+
+    private static double size(net.minecraft.world.phys.AABB b, Direction.Axis a) {
+        return a == Direction.Axis.X ? b.getXsize() : a == Direction.Axis.Y ? b.getYsize() : b.getZsize();
+    }
+
+    /** Vanilla's sneak edge-check, for any floor: shrink each step until there's still something under you. */
+    private static Vec3 backOffEdge(LocalPlayer p, Vec3 move, Vec3 g) {
+        // The two directions along your floor.
+        Vec3 a, b;
+        if (Math.abs(g.y) > 0.5D) { a = new Vec3(1, 0, 0); b = new Vec3(0, 0, 1); }
+        else if (Math.abs(g.x) > 0.5D) { a = new Vec3(0, 1, 0); b = new Vec3(0, 0, 1); }
+        else { a = new Vec3(1, 0, 0); b = new Vec3(0, 1, 0); }
+        double da = move.dot(a), db = move.dot(b);
+        final double step = 0.05D;
+        Vec3 down = g.scale(p.maxUpStep() + 0.01D);
+        while (da != 0.0D && !supported(p, a.scale(da), down)) da = Math.abs(da) < step ? 0.0D : da - Math.signum(da) * step;
+        while (db != 0.0D && !supported(p, b.scale(db), down)) db = Math.abs(db) < step ? 0.0D : db - Math.signum(db) * step;
+        while (da != 0.0D && db != 0.0D && !supported(p, a.scale(da).add(b.scale(db)), down)) {
+            da = Math.abs(da) < step ? 0.0D : da - Math.signum(da) * step;
+            db = Math.abs(db) < step ? 0.0D : db - Math.signum(db) * step;
+        }
+        Vec3 rest = move.subtract(a.scale(move.dot(a))).subtract(b.scale(move.dot(b)));
+        return a.scale(da).add(b.scale(db)).add(rest);
+    }
+
+    private static boolean supported(LocalPlayer p, Vec3 offset, Vec3 down) {
+        return !p.level().noCollision(p, p.getBoundingBox().move(offset).move(down));
     }
 
     private static Vec3 flat(Vec3 dir, Vec3 g) {

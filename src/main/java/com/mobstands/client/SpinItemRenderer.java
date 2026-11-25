@@ -30,7 +30,7 @@ public class SpinItemRenderer extends EntityRenderer<SpinItemEntity> {
         // The item, spinning just above the ground (with a little shudder while it's fast).
         ps.pushPose();
         ps.translate(0.0F, 0.2F, 0.0F);
-        ps.mulPose(Axis.ZP.rotationDegrees(Mth.sin(el * 1.7F) * 5.0F * k));
+        SpinFx.wobble(ps, el, k);
         ps.mulPose(Axis.YP.rotationDegrees(angle));
         // Spins around its own centre. 3D models (blocks, the Steel Ball) spin upright; swords and other flat items lie
         // flat and whirl horizontally like a saw blade (drawn without the ground offset, which would swing them off-centre).

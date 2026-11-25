@@ -33,7 +33,7 @@ public final class PilotClient {
      * as it cools - blue when cool, through orange, to red. Overheated, it flashes red until it's cooled right down.
      */
     public static void render(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.DeltaTracker delta) {
-        if (flying == null) return;
+        if (flying == null || flying.getStandType() != com.mobstands.stand.StandType.PHANTOM) return; // (only the Phantom has a gun)
         Minecraft mc = Minecraft.getInstance();
         if (mc.options.hideGui) return;
         // Crosshair: a single dot dead centre, where your shots go.
@@ -119,7 +119,7 @@ public final class PilotClient {
                         .withStyle(s -> s.withColor(0x6F8CFF)), true);
             }
             if (fireCooldown > 0) fireCooldown--;
-            if (mc.screen == null && mc.options.keyUse.isDown() && fireCooldown == 0) {
+            if (mc.screen == null && mc.options.keyUse.isDown() && fireCooldown == 0 && found.getStandType() == com.mobstands.stand.StandType.PHANTOM) {
                 PacketDistributor.sendToServer(new StandActionPayload(33));
                 fireCooldown = 3;
             }

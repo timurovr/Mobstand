@@ -136,8 +136,32 @@ public final class Calamity {
         HIDDEN.remove(user.getUUID());
     }
 
+    /**
+     * The calamity, showing on whoever's building it - quietly. A dark speck now and then at first; thicker as their next
+     * accident nears; dark wisps curling at their feet; and right before it strikes, souls drifting up off them.
+     */
+    private static void calamityAura(ServerLevel sl, LivingEntity e, double pts, double next) {
+        long now = sl.getGameTime();
+        if (now % 4L != 0L) return;
+        double prev = next - (e instanceof Player ? STEP * 1.5D : STEP);
+        double k = Math.max(0.0D, Math.min(1.0D, (pts - Math.max(0.0D, prev)) / Math.max(1.0D, next - Math.max(0.0D, prev))));
+        double w = e.getBbWidth() * 0.6D, h = e.getBbHeight();
+        int ash = (int) (1 + k * 4);
+        sl.sendParticles(ParticleTypes.ASH, e.getX(), e.getY() + h * 0.6D, e.getZ(), ash, w, h * 0.4D, w, 0.0D);
+        if (k > 0.55D && now % 8L == 0L) sl.sendParticles(ParticleTypes.SQUID_INK, e.getX(), e.getY() + 0.1D, e.getZ(), 2, w, 0.05D, w, 0.01D);
+        if (k > 0.85D && now % 8L == 0L) sl.sendParticles(ParticleTypes.SCULK_SOUL, e.getX(), e.getY() + h * 0.5D, e.getZ(), 1, w * 0.6D, h * 0.3D, w * 0.6D, 0.01D);
+    }
+
     /** One accident, worse the more calamity it has built. */
     private static void accident(ServerLevel sl, LivingEntity e, double points, ServerPlayer user) {
+        // The ash rushes in on them as it happens, with a quiet click.
+        Vec3 c0 = e.position().add(0.0D, e.getBbHeight() * 0.5D, 0.0D);
+        for (int i = 0; i < 16; i++) {
+            double a = i / 16.0D * Math.PI * 2.0D;
+            double ox = Math.cos(a) * 1.8D, oz = Math.sin(a) * 1.8D;
+            sl.sendParticles(ParticleTypes.ASH, c0.x + ox, c0.y, c0.z + oz, 0, -ox, 0.0D, -oz, 0.12D);
+        }
+        sl.playSound(null, c0.x, c0.y, c0.z, SoundEvents.WARDEN_TENDRIL_CLICKS, SoundSource.HOSTILE, 0.5F, 0.7F);
         boolean player = e instanceof Player;
         if (user != null && !player) StandCombat.credit(user, e);
         int tier = (int) Math.min(4, points / 120.0D);
@@ -456,6 +480,12 @@ public final class Calamity {
             ServerLevel sl = u.serverLevel();
             long now = sl.getGameTime();
             boolean hidden = HIDDEN.containsKey(u.getUUID()) && now < HIDDEN.get(u.getUUID());
+            // Your presence: dark ash drifting down around you, always. The air's just... heavier near you.
+            if (now % 3L == 0L && !hidden) {
+                double a = sl.random.nextDouble() * Math.PI * 2.0D, r = 1.0D + sl.random.nextDouble() * 2.5D;
+                sl.sendParticles(ParticleTypes.ASH, u.getX() + Math.cos(a) * r, u.getY() + 1.0D + sl.random.nextDouble() * 1.5D,
+                        u.getZ() + Math.sin(a) * r, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+            }
             for (Mob m : sl.getEntitiesOfClass(Mob.class, u.getBoundingBox().inflate(32.0D), x -> x.isAlive() && !boss(x))) {
                 boolean after = m.getTarget() == u
                         || (m.getBrain().checkMemory(MemoryModuleType.ATTACK_TARGET, net.minecraft.world.entity.ai.memory.MemoryStatus.REGISTERED)
@@ -551,6 +581,7 @@ public final class Calamity {
                 en.setValue(pts);
             }
             double next = NEXT.getOrDefault(id, STEP);
+            calamityAura(user.serverLevel(), e, pts, next);
             if (pts >= next) {
                 double p = pts;
                 NEXT.put(id, next + (e instanceof Player ? STEP * 1.5D : STEP));

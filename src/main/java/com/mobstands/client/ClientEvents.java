@@ -18,7 +18,7 @@ public final class ClientEvents {
 
     /**
      * Right click is the default basic-attack key. It is shared with vanilla "use item", so the Stand only
-     * takes over when your hands are empty and you are not pointing at a block or villager. Rebind the
+     * takes over when your hands are empty (or you're holding a sword or axe) and you are not pointing at a block or villager. Rebind the
      * basic attack key to avoid this entirely.
      */
     private static boolean basicAllowed(Minecraft mc) {
@@ -26,10 +26,14 @@ public final class ClientEvents {
         if (!ClientStandCache.get().getType().hasBasic()) return false; // Squid / Axolotl: right click stays vanilla
         if (!StandKeys.BASIC.getKey().equals(mc.options.keyUse.getKey())) return true;
         if (mc.player == null) return false;
-        if (!mc.player.getMainHandItem().isEmpty() || !mc.player.getOffhandItem().isEmpty()) return false;
+        // Empty hands - or a sword or axe in your main hand (right click does nothing useful with one anyway).
+        net.minecraft.world.item.ItemStack main = mc.player.getMainHandItem();
+        boolean weapon = main.is(net.minecraft.tags.ItemTags.SWORDS) || main.is(net.minecraft.tags.ItemTags.AXES);
+        if (!weapon && (!main.isEmpty() || !mc.player.getOffhandItem().isEmpty())) return false;
         HitResult hit = mc.hitResult;
         if (hit == null) return true;
         if (hit.getType() == HitResult.Type.BLOCK) return false;
+        if (hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof net.minecraft.world.entity.player.Player op && CartRide.riding(op)) return false; // (climbing aboard their train)
         return !(hit instanceof EntityHitResult ehr && ehr.getEntity() instanceof AbstractVillager);
     }
 
@@ -133,10 +137,28 @@ public final class ClientEvents {
         }
     }
 
+    /** Time Stop: the camera shakes as the sphere bursts and as time moves again. */
+    @SubscribeEvent
+    public static void onCameraAngles(net.neoforged.neoforge.client.event.ViewportEvent.ComputeCameraAngles event) {
+        TimeStopFx.shake(event);
+        BlastFx.shake(event);
+    }
+
+    /** Bites the Dust's clock and colours, drawn over the "You Died!" screen while you're being wound back. */
+    @SubscribeEvent
+    public static void onScreenDrawn(net.neoforged.neoforge.client.event.ScreenEvent.Render.Post event) {
+        TimeStopFx.overMenu(event);
+    }
+
     /** Time Stop's wave follows the clock on your Stand's chest across the screen. */
     @SubscribeEvent
     public static void onRenderStage(net.neoforged.neoforge.client.event.RenderLevelStageEvent event) {
         TimeStopFx.frame(event);
+        BlastFx.render(event);
+        TimeStopFx.specks(event);
+        VineFx.render(event);
+        RopeFx.render(event);
+        AnotherWorldFx.frame(event);
     }
 
     /** The Phantom's dream world: thick, dark, horror-movie fog. */
@@ -162,15 +184,41 @@ public final class ClientEvents {
     public static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         TimeStopFx.tick(mc);
+        VineFx.tick();
+        BlastFx.tick();
+        AnotherWorldFx.tick(mc);
         if (mc.player == null) return;
+        // Brought back to life by a rewind (Bites the Dust): you're alive, so the "You Died!" screen goes away.
+        if (mc.screen instanceof net.minecraft.client.gui.screens.DeathScreen && mc.player.isAlive() && !mc.player.isDeadOrDying()) {
+            mc.setScreen(null);
+        }
         // Brought back by Bites the Dust while on the death screen: close it.
         if (mc.screen instanceof net.minecraft.client.gui.screens.DeathScreen && mc.player.isAlive() && mc.player.getHealth() > 0.0F) {
             mc.setScreen(null);
         }
         boolean open = mc.screen == null;
 
+        // A tool Stand (lasso, rod) that's out: tap R takes the tool in or out of your hand, hold R dismisses the Stand.
+        if (rDownAt >= 0) {
+            long held = System.currentTimeMillis() - rDownAt;
+            if (!StandKeys.SUMMON.isDown()) {
+                rDownAt = -1;
+                if (held < 450) send(41);
+            } else if (held >= 450) {
+                rDownAt = -1;
+                send(0);
+            }
+        }
         while (StandKeys.SUMMON.consumeClick()) {
-            if (open) send(0);
+            if (!open) continue;
+            var sd = ClientStandCache.get();
+            if (sd.isSummoned() && com.mobstands.stand.StandTools.toolFor(sd.getType()) != null && !(mc.player != null && mc.player.isShiftKeyDown())) {
+                if (rDownAt < 0) rDownAt = System.currentTimeMillis();
+                continue;
+            }
+            // Pig line: Shift + summon switches Acts (once more than one is unlocked).
+            if (mc.player != null && mc.player.isShiftKeyDown() && sd.getType() != null && sd.getType().pigAct() > 0 && sd.pigActMax > 1) send(28);
+            else send(0);
         }
         while (StandKeys.BASIC.consumeClick()) {
             if (open && basicAllowed(mc)) send(1);
@@ -184,35 +232,51 @@ public final class ClientEvents {
         while (StandKeys.ABILITY2.consumeClick()) {
             if (!open || allay) continue;
             if (cmoon) {
-                // C-Moon: hold X to open the Gravity Punch wheel (if it's ready and your Shulker is out).
+                // Crescent Shell: hold X and tap a direction key to aim the Gravity Punch (if it is ready and your Shulker is out).
                 var d = ClientStandCache.get();
                 if (d.isSummoned() && mc.level != null && d.cooldownRemaining(2, mc.level.getGameTime()) <= 0) {
-                    mc.setScreen(new GravityPickScreen());
+                    GravityFlick.start(1); // hold X + tap a direction key
                 }
             } else {
                 send(3);
             }
         }
         if (allay) {
-            // Allay: tap X = Allay Hold (grab the enemy you're looking at); hold X = let go.
+            // Allay: tap X = Allay Hold (grab the enemy you're looking at); spam X 3 times = let go;
+            // hold X while looking at a held enemy = drag it around with your crosshair.
             boolean down = open && StandKeys.ABILITY2.isDown();
             long t = net.minecraft.Util.getMillis();
             if (down && xDownAt < 0) {
                 xDownAt = t;
                 xFired = false;
-            } else if (down && !xFired && t - xDownAt >= 450L) {
+            } else if (down && !xFired && t - xDownAt >= 300L) {
                 xFired = true;
-                send(20);
+                xTaps = 0; // a hold, not a tap
+                send(26); // start dragging
             } else if (!down && xDownAt >= 0) {
-                if (!xFired) send(3);
+                if (xFired) {
+                    send(27); // let go of the drag
+                } else {
+                    xTaps++;
+                    xLastTap = t;
+                    if (xTaps >= 3) {
+                        xTaps = 0;
+                        send(20); // spammed 3 times: drop
+                    }
+                }
                 xDownAt = -1L;
+            }
+            // Taps settle once you stop tapping: 1 or 2 taps = Allay Hold.
+            if (xTaps > 0 && xDownAt < 0 && t - xLastTap > 250L) {
+                xTaps = 0;
+                send(3);
             }
         }
         while (StandKeys.ULTIMATE.consumeClick()) {
             if (!open) continue;
             if (cmoon) {
-                // C-Moon: hold C for the Gravity Turn wheel - let go on an arrow and your own gravity turns that way.
-                if (ClientStandCache.get().isSummoned()) mc.setScreen(new GravityPickScreen(true));
+                // Crescent Shell: hold C and tap a direction key - your own gravity turns that way.
+                if (ClientStandCache.get().isSummoned()) GravityFlick.start(2); // hold C + tap a direction key
             } else {
                 send(4);
             }
@@ -236,6 +300,7 @@ public final class ClientEvents {
         SpinInput.tick();
         PilotClient.tick();
         PossessClient.tick();
+        GravityFlick.tick();
     }
 
     /** Spin users: Q while holding an item goes to the Spin skill check instead of a plain drop. */
@@ -270,7 +335,7 @@ public final class ClientEvents {
         ps.pushPose();
         ps.translate(side * 0.56F, -0.52F + event.getEquipProgress() * -0.6F, -0.72F);
         ps.translate(-side * 0.12F, 0.2F, -0.08F); // floating just above the palm
-        ps.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(Mth.sin(el * 1.7F) * 6.0F * k)); // a violent shudder while it's fast
+        SpinFx.wobble(ps, el, k); // leaning and circling like a spinning top
         if (!off && SpinFx.slashing(event.getPartialTick())) {
             // Just struck the ground: the sword rolls forward over and over, like a wheel.
             ps.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-SpinFx.slashAngle(event.getPartialTick())));
@@ -300,12 +365,17 @@ public final class ClientEvents {
         // turned so it spins round the line of your arm.
         ps.translate(0.0F, -0.09F, -0.01F);
         ps.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-90.0F));
+        SpinFx.wobble(ps, el, SpinFx.speed(el));
         ps.mulPose(com.mojang.math.Axis.YP.rotationDegrees(SpinFx.angle(el)));
         SpinFx.drawRings(ps, buffers, el, 0.28F);
     }
 
     @SubscribeEvent
     public static void onFov(net.neoforged.neoforge.client.event.ViewportEvent.ComputeFov event) {
+        float aw = AnotherWorldFx.fovScale();
+        if (aw != 1.0F) event.setFOV(event.getFOV() * aw); // Another World: squeezed through, then the pop
+        float ts = TimeStopFx.fovScale();
+        if (ts != 1.0F) event.setFOV(event.getFOV() * ts); // Time Stop: pull in on the charge, kick out on the burst
         float cart = CartRide.fovScale();
         if (cart != 1.0F) event.setFOV(event.getFOV() * cart); // Minecart boosts: the world stretches as you speed up
         if (RushFx.idle()) return;
@@ -374,6 +444,12 @@ public final class ClientEvents {
 
     private static long xDownAt = -1L;
     private static boolean xFired;
+    /** Allay: quick X taps in a row (3 = drop), and when the last one was. */
+    private static int xTaps;
+    private static long xLastTap;
+
+    /** When R went down (a tool Stand: tap or hold?), or -1. */
+    private static long rDownAt = -1;
 
     private static void send(int action) {
         PacketDistributor.sendToServer(new StandActionPayload(action));

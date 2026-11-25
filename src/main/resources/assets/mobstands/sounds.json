@@ -71,5 +71,19 @@
     "sounds": [
       "mobstands:stand/lazarus"
     ]
+  },
+  "stand.bites_the_dust": {
+    "subtitle": "subtitles.mobstands.stand.bites_the_dust",
+    "sounds": [
+      "mobstands:stand/bites_the_dust"
+    ]
+  },
+  "stand.zipper": {
+    "subtitle": "subtitles.mobstands.stand.zipper",
+    "sounds": [
+      "mobstands:stand/zipper_1",
+      "mobstands:stand/zipper_2",
+      "mobstands:stand/zipper_3"
+    ]
   }
 }

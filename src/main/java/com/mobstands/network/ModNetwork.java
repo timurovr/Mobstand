@@ -22,7 +22,18 @@ public final class ModNetwork {
         registrar.playToClient(RainTimePayload.TYPE, RainTimePayload.CODEC, RainTimePayload::handle);
         registrar.playToClient(PropMenuPayload.TYPE, PropMenuPayload.CODEC, PropMenuPayload::handle);
         registrar.playToServer(PropPickPayload.TYPE, PropPickPayload.CODEC, PropPickPayload::handle);
+        registrar.playToClient(RpsPayload.TYPE, RpsPayload.CODEC, RpsPayload::handle);
+        registrar.playToClient(VinePayload.TYPE, VinePayload.CODEC, VinePayload::handle);
+        registrar.playToClient(TimeHeldPayload.TYPE, TimeHeldPayload.CODEC, TimeHeldPayload::handle);
+        registrar.playToClient(RespawnNowPayload.TYPE, RespawnNowPayload.CODEC, RespawnNowPayload::handle);
+        registrar.playToClient(RewoundPayload.TYPE, RewoundPayload.CODEC, RewoundPayload::handle);
+        registrar.playToClient(GooPayload.TYPE, GooPayload.CODEC, GooPayload::handle);
+        registrar.playToClient(RopePayload.TYPE, RopePayload.CODEC, RopePayload::handle);
+        registrar.playToClient(VineLeadPayload.TYPE, VineLeadPayload.CODEC, VineLeadPayload::handle);
+        registrar.playToServer(RpsPickPayload.TYPE, RpsPickPayload.CODEC, RpsPickPayload::handle);
         registrar.playToClient(FusePayload.TYPE, FusePayload.CODEC, FusePayload::handle);
+        registrar.playToClient(BlastPayload.TYPE, BlastPayload.CODEC, BlastPayload::handle);
+        registrar.playToClient(AnotherWorldPayload.TYPE, AnotherWorldPayload.CODEC, AnotherWorldPayload::handle);
         registrar.playToClient(ClashPayload.TYPE, ClashPayload.CODEC, ClashPayload::handle);
         registrar.playToServer(ClashPressPayload.TYPE, ClashPressPayload.CODEC, ClashPressPayload::handle);
         registrar.playToServer(GravityPickPayload.TYPE, GravityPickPayload.CODEC, GravityPickPayload::handle);

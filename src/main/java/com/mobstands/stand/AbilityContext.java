@@ -49,7 +49,7 @@ public final class AbilityContext {
     // ------------------------------------------------------------------ power
 
     public double power() {
-        return type.rarity().power() * (1.0D + type.powerPerLevel() * (standLevel - 1) * 14.0D / 9.0D) * StandConfig.DAMAGE_MULTIPLIER.get();
+        return StandClass.power(type) * (1.0D + type.powerPerLevel() * (standLevel - 1) * 14.0D / 9.0D) * StandConfig.DAMAGE_MULTIPLIER.get();
     }
 
     public float dmg(double base) {
@@ -214,7 +214,53 @@ public final class AbilityContext {
                 ? Level.ExplosionInteraction.TNT : Level.ExplosionInteraction.NONE;
         // Owner is the explosion source (kills credit the owner); StandEvents makes the owner immune to it.
         level.explode(owner, pos.x, pos.y, pos.z, p, mode);
+        if (type == StandType.CREEPER || type == StandType.CREEPER_REQUIEM) {
+            juicyBlastFx(level, pos, p, type == StandType.CREEPER_REQUIEM);
+            return;
+        }
         // Without block damage vanilla only shows one small puff, so always add a full creeper-style blast.
+        level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, pos.x, pos.y, pos.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        level.sendParticles(ParticleTypes.EXPLOSION, pos.x, pos.y, pos.z, (int) (6 + p * 4), p * 0.4D, p * 0.3D, p * 0.4D, 0.0D);
+        level.sendParticles(ParticleTypes.LARGE_SMOKE, pos.x, pos.y, pos.z, (int) (8 + p * 5), p * 0.5D, p * 0.4D, p * 0.5D, 0.02D);
+        level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.GENERIC_EXPLODE, SoundSource.PLAYERS,
+                Math.min(4.0F, 1.5F + p * 0.5F), 0.85F + level.random.nextFloat() * 0.2F);
+    }
+
+    /**
+     * A creeper-style blast with no real explosion: it never breaks blocks or hurts you, it just deals explosive
+     * damage (blast protection reduces it) to enemies within {@code radius}, weaker toward the edge (half at the rim),
+     * and knocks them back a little.
+     */
+    public void blast(Vec3 pos, double radius, double baseDamage) {
+        blast(pos, radius, baseDamage, true);
+    }
+
+    /** @param boom false = no explosion look at all: a green shockwave of sparks and a firework crack instead. */
+    public void blast(Vec3 pos, double radius, double baseDamage, boolean boom) {
+        for (LivingEntity e : enemies(pos, radius)) {
+            Vec3 mid = e.position().add(0.0D, e.getBbHeight() * 0.5D, 0.0D);
+            double falloff = 1.0D - 0.5D * Math.min(1.0D, mid.distanceTo(pos) / radius);
+            StandCombat.credit(owner, e);
+            e.hurt(level.damageSources().explosion(owner, owner), (float) (dmg(baseDamage) * falloff));
+            push(e, mid.subtract(pos), 0.6D * falloff, 0.25D * falloff);
+        }
+        if (!boom) {
+            level.sendParticles(ParticleTypes.HAPPY_VILLAGER, pos.x, pos.y, pos.z, (int) (20 + radius * 8), radius * 0.4D, 0.4D, radius * 0.4D, 0.1D);
+            level.sendParticles(ParticleTypes.FIREWORK, pos.x, pos.y, pos.z, (int) (15 + radius * 6), 0.2D, 0.2D, 0.2D, 0.25D);
+            int pts = (int) (16 + radius * 6);
+            for (int j = 0; j < pts; j++) {
+                double a = (Math.PI * 2.0D) * j / pts;
+                level.sendParticles(ParticleTypes.CLOUD, pos.x + Math.cos(a) * radius * 0.8D, pos.y - 0.6D, pos.z + Math.sin(a) * radius * 0.8D, 1, 0.0D, 0.05D, 0.0D, 0.02D);
+            }
+            level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.FIREWORK_ROCKET_BLAST, SoundSource.PLAYERS, 2.0F, 0.7F);
+            level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.CREEPER_HURT, SoundSource.PLAYERS, 1.0F, 0.6F);
+            return;
+        }
+        float p = (float) (radius * 0.5D);
+        if (type == StandType.CREEPER || type == StandType.CREEPER_REQUIEM) {
+            juicyBlastFx(level, pos, p * 1.4F, type == StandType.CREEPER_REQUIEM);
+            return;
+        }
         level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, pos.x, pos.y, pos.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
         level.sendParticles(ParticleTypes.EXPLOSION, pos.x, pos.y, pos.z, (int) (6 + p * 4), p * 0.4D, p * 0.3D, p * 0.4D, 0.0D);
         level.sendParticles(ParticleTypes.LARGE_SMOKE, pos.x, pos.y, pos.z, (int) (8 + p * 5), p * 0.5D, p * 0.4D, p * 0.5D, 0.02D);
@@ -230,6 +276,72 @@ public final class AbilityContext {
     public void bigExplode(Vec3 pos, double basePower) {
         explode(pos, basePower);
         bigBlastFx(level, pos, basePower);
+    }
+
+    /**
+     * A creeper Stand's blast, made juicy: a flash and a fat boom, sparks spraying out in every direction, chunks of
+     * the ground flying up, a few little follow-up pops with a crackling firework tail, and smoke and embers drifting
+     * off - plus (on everyone nearby's screen) a glowing fireball, shockwave rings and a camera shake.
+     * Creeper: creeper green. Green Detonator Requiem: charged electric blue.
+     */
+    public static void juicyBlastFx(ServerLevel level, Vec3 pos, double power, boolean requiem) {
+        double r = Math.max(1.0D, power);
+        var rnd = level.random;
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayersNear(level, null, pos.x, pos.y, pos.z, 96.0D,
+                new com.mobstands.network.BlastPayload(pos.x, pos.y, pos.z, (float) r, requiem));
+        org.joml.Vector3f hue = requiem ? new org.joml.Vector3f(0.44F, 0.85F, 1.0F) : new org.joml.Vector3f(0.42F, 0.92F, 0.29F);
+        var colour = new net.minecraft.core.particles.DustColorTransitionOptions(new org.joml.Vector3f(1.0F, 1.0F, 1.0F), hue, 2.4F);
+        // The boom.
+        level.sendParticles(ParticleTypes.FLASH, pos.x, pos.y, pos.z, 2, 0.0D, 0.0D, 0.0D, 0.0D);
+        level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, pos.x, pos.y, pos.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        level.sendParticles(ParticleTypes.EXPLOSION, pos.x, pos.y, pos.z, (int) (5 + r * 3), r * 0.45D, r * 0.3D, r * 0.45D, 0.0D);
+        level.sendParticles(colour, pos.x, pos.y, pos.z, (int) (30 + r * 12), r * 0.6D, r * 0.45D, r * 0.6D, 0.0D);
+        // Sparks spraying out in every direction (an even spread over a sphere).
+        int n = (int) (40 + r * 10);
+        double golden = Math.PI * (3.0D - Math.sqrt(5.0D));
+        for (int i = 0; i < n; i++) {
+            double y = 1.0D - 2.0D * (i + 0.5D) / n, rad = Math.sqrt(1.0D - y * y), th = golden * i;
+            double dx = Math.cos(th) * rad, dz = Math.sin(th) * rad, dy = Math.abs(y) * 0.8D + 0.2D;
+            level.sendParticles(requiem && i % 2 == 0 ? ParticleTypes.ELECTRIC_SPARK : ParticleTypes.FIREWORK, pos.x, pos.y, pos.z, 0,
+                    dx, dy, dz, 0.35D + r * 0.08D + rnd.nextDouble() * 0.15D);
+        }
+        // Chunks of the ground flying up.
+        net.minecraft.core.BlockPos below = net.minecraft.core.BlockPos.containing(pos.x, pos.y - 1.0D, pos.z);
+        var ground = level.getBlockState(below);
+        if (ground.isAir()) ground = level.getBlockState(below.below());
+        if (!ground.isAir()) {
+            level.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, ground), pos.x, pos.y - 0.3D, pos.z,
+                    (int) (30 + r * 10), r * 0.5D, 0.2D, r * 0.5D, 0.5D);
+        }
+        // The sound: a fat boom, a firework blast on top, and the creeper's own note.
+        level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, (float) Math.min(4.0D, 1.6D + r * 0.5D), 0.7F + rnd.nextFloat() * 0.15F);
+        level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.FIREWORK_ROCKET_LARGE_BLAST, SoundSource.PLAYERS, 2.0F, 0.6F);
+        if (requiem) level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.TRIDENT_THUNDER.value(), SoundSource.PLAYERS, 0.6F, 1.8F);
+        else level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.CREEPER_DEATH, SoundSource.PLAYERS, 0.8F, 1.4F);
+        // The aftermath: a few little pops, a crackling tail, smoke and embers drifting up.
+        for (int i = 1; i <= 24; i++) {
+            final int k = i;
+            TickScheduler.later(i, () -> {
+                if (k == 2 || k == 4 || k == 7) {
+                    double ox = (rnd.nextDouble() - 0.5D) * r * 1.6D, oz = (rnd.nextDouble() - 0.5D) * r * 1.6D;
+                    level.sendParticles(ParticleTypes.EXPLOSION, pos.x + ox, pos.y + rnd.nextDouble() * r * 0.6D, pos.z + oz, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+                    level.sendParticles(colour, pos.x + ox, pos.y + 0.3D, pos.z + oz, 10, 0.3D, 0.3D, 0.3D, 0.0D);
+                }
+                if (k == 5) level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.FIREWORK_ROCKET_TWINKLE, SoundSource.PLAYERS, 1.4F, 1.0F);
+                if (k == 9) level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.FIREWORK_ROCKET_TWINKLE_FAR, SoundSource.PLAYERS, 1.2F, 0.9F);
+                double h = k * 0.12D;
+                if (k % 2 == 0) level.sendParticles(ParticleTypes.LARGE_SMOKE, pos.x, pos.y + h, pos.z, 3, r * 0.35D, 0.2D, r * 0.35D, 0.01D);
+                if (k % 3 == 0) {
+                    if (requiem) {
+                        level.sendParticles(ParticleTypes.ELECTRIC_SPARK, pos.x, pos.y + h * 0.5D, pos.z, 6, r * 0.6D, r * 0.3D, r * 0.6D, 0.1D);
+                        level.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, pos.x, pos.y, pos.z, 4, r * 0.5D, 0.2D, r * 0.5D, 0.01D);
+                    } else {
+                        level.sendParticles(ParticleTypes.HAPPY_VILLAGER, pos.x, pos.y + h * 0.5D, pos.z, 5, r * 0.6D, r * 0.3D, r * 0.6D, 0.0D);
+                        level.sendParticles(ParticleTypes.SMALL_FLAME, pos.x, pos.y, pos.z, 4, r * 0.5D, 0.2D, r * 0.5D, 0.01D);
+                    }
+                }
+            });
+        }
     }
 
     /** The cinematic part of a big blast on its own (no damage), for blasts made elsewhere (Heart Attack...). */

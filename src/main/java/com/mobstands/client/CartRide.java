@@ -73,7 +73,15 @@ public final class CartRide {
         if (p.level() == null) return false;
         // Your own Stand dismissed: out of the cart that very tick (no waiting for the server to catch up).
         if (p.isLocalPlayer() && !com.mobstands.network.ClientStandCache.get().isSummoned()) return false;
-        return StandPresence.riding(p.getUUID(), p.level().getGameTime());
+        com.mobstands.stand.StandType t = StandPresence.get(p.getUUID(), p.level().getGameTime());
+        return t != null && t.isCart() && StandPresence.riding(p.getUUID(), p.level().getGameTime());
+    }
+
+    /** Surfing the rain on your Dolphin Stand (Catch the Rainbow's Rain Walk, up on the drops). */
+    public static boolean ridingDolphin(Player p) {
+        if (p.level() == null) return false;
+        com.mobstands.stand.StandType t = StandPresence.get(p.getUUID(), p.level().getGameTime());
+        return t == com.mobstands.stand.StandType.DOLPHIN && StandPresence.riding(p.getUUID(), p.level().getGameTime());
     }
 
     /** Runs right after your keys are read: the cart takes over W/S, and your mouse steers. */

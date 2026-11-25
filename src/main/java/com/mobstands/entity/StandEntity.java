@@ -273,13 +273,52 @@ public class StandEntity extends Entity {
     private static final EntityDataAccessor<Boolean> HIDDEN =
             SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
     /** Phantom: being piloted remotely, Aerosmith-style. */
+    /** Squid Rain Shot: which way it's facing while it fires (so its tentacles point where the water goes). */
+    private static final EntityDataAccessor<Float> FACE_YAW =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Boolean> PILOT =
             SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
+    /** Yellow Masquerade: its user is wearing the goo (Temperance Armor), and the shape it's taken (entity type id, -1 none). */
+    private static final EntityDataAccessor<Boolean> GOO =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Integer> DISGUISE =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.INT);
+
+    /** Smoke and Mirrors: how many mirror images its user has around them, and whether they've vanished. */
+    private static final EntityDataAccessor<Integer> MIRROR =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> VANISH =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
+
+    public int mirror() { return entityData.get(MIRROR); }
+    public void setMirror(int n) { entityData.set(MIRROR, n); }
+    public boolean isVanished() { return entityData.get(VANISH); }
+    public void setVanish(boolean on) { entityData.set(VANISH, on); }
+
+    public boolean isGoo() { return entityData.get(GOO); }
+    public void setGoo(boolean on) { entityData.set(GOO, on); }
+    public int disguise() { return entityData.get(DISGUISE); }
+    public void setDisguise(int id) { entityData.set(DISGUISE, id); }
+
+    /** Silver Fingers: its user's Stand level (how tame the swarm is). */
+    private static final EntityDataAccessor<Integer> SWARM =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.INT);
+
+    public int swarmLevel() {
+        return entityData.get(SWARM);
+    }
 
     // ------------------------------------------------------------------ Phantom: Aerosmith piloting
 
     /** How far from you the Phantom can fly while you pilot it. */
     public static final double PILOT_RANGE = 64.0D;
+    /** How far the Squid can drift from you while you steer it (very close). */
+    public static final double SQUID_PILOT_RANGE = 8.0D;
+
+    /** How far this kind of Stand can go from you while piloted. */
+    public static double pilotRange(StandType t) {
+        return t == StandType.SQUID ? SQUID_PILOT_RANGE : PILOT_RANGE;
+    }
     /** Client (the pilot's game): current flight velocity. */
     public Vec3 pilotVel = Vec3.ZERO;
     /** Client: how far it's banked into a turn (degrees, smoothed). */
@@ -288,6 +327,18 @@ public class StandEntity extends Entity {
 
     public boolean isPiloting() {
         return entityData.get(PILOT);
+    }
+
+    /** Squid Rain Shot: keep facing the way it's firing (set by the server every pulse). */
+    public void setFaceYaw(float yaw) {
+        entityData.set(FACE_YAW, yaw);
+    }
+
+    /** While the Squid fires Rain Shot, it keeps facing its shot instead of turning with you. */
+    private void faceShot() {
+        if (getStandType() == StandType.SQUID && animSlot() == 3) {
+            setYRot(Mth.rotLerp(0.5F, getYRot(), entityData.get(FACE_YAW)));
+        }
     }
 
     public void setPiloting(boolean on) {
@@ -330,14 +381,18 @@ public class StandEntity extends Entity {
         Vec3 left = new Vec3(Mth.cos(yaw), 0.0D, Mth.sin(yaw));
         Vec3 wish = fwd.scale(pilotForward).add(left.scale(pilotStrafe));
         if (wish.lengthSqr() > 1.0D) wish = wish.normalize();
-        double speed = pilotSprint ? 1.0D : 0.55D;
-        wish = wish.scale(speed).add(0.0D, (pilotUp ? 0.5D : 0.0D) - (pilotDown ? 0.5D : 0.0D), 0.0D);
+        boolean squid = getStandType() == StandType.SQUID;
+        double range = pilotRange(getStandType());
+        // (the Squid drifts slower and floatier, like it's swimming through the air)
+        double speed = squid ? (pilotSprint ? 0.45D : 0.28D) : (pilotSprint ? 1.0D : 0.55D);
+        double lift = squid ? 0.25D : 0.5D;
+        wish = wish.scale(speed).add(0.0D, (pilotUp ? lift : 0.0D) - (pilotDown ? lift : 0.0D), 0.0D);
         // Snappy like creative flight: picks up speed fast and glides to a stop when you let go.
         Vec3 v = pilotVel.scale(0.55D).add(wish.scale(0.45D));
         // An invisible wall at the range: it can slide along the edge but never past it.
         Vec3 home = o.position().add(0.0D, 1.0D, 0.0D);
         Vec3 out = position().add(v).subtract(home);
-        if (out.length() > PILOT_RANGE) {
+        if (out.length() > range) {
             Vec3 n = out.normalize();
             double push = v.dot(n);
             if (push > 0.0D) v = v.subtract(n.scale(push)); // drop the part of the move heading outward
@@ -357,8 +412,8 @@ public class StandEntity extends Entity {
         }
         // (and if it's somehow past the wall - say you walked off - it's put right back on it)
         Vec3 off = position().subtract(home);
-        if (off.length() > PILOT_RANGE) {
-            Vec3 at = home.add(off.normalize().scale(PILOT_RANGE));
+        if (off.length() > range) {
+            Vec3 at = home.add(off.normalize().scale(range));
             setPos(at.x, at.y, at.z);
         }
         pilotVel = v;
@@ -419,12 +474,18 @@ public class StandEntity extends Entity {
         builder.define(MOB_APPEAR, -100000);
         builder.define(FAKE_DEAD, false);
         builder.define(ALLAYS, 1);
+        builder.define(SWARM, 1);
+        builder.define(GOO, false);
+        builder.define(DISGUISE, -1);
+        builder.define(MIRROR, 0);
+        builder.define(VANISH, false);
         builder.define(ROAM, false);
         builder.define(HURT_AT, -1000);
         builder.define(HOLDS, new CompoundTag());
         builder.define(LIFT_START, -1);
         builder.define(LIFT_END, -1);
         builder.define(PILOT, false);
+        builder.define(FACE_YAW, 0.0F);
     }
 
     // ------------------------------------------------------------------ accessors
@@ -575,6 +636,7 @@ public class StandEntity extends Entity {
             com.mobstands.stand.TickScheduler.later(StandAbilities.PUNCH_HIT_TICK, () -> {
                 if (isRemoved() || !victim.isAlive() || !o.isAlive() || victim.distanceToSqr(this) > 4.5D * 4.5D) return;
                 float dmg = type == StandType.IRON_GOLEM ? 2.0F : 1.5F;
+                if (com.mobstands.stand.Encounters.isBoss(o)) dmg *= 3.0F; // a lone Stand user on the road: the real deal
                 if (victim.hurt(sl.damageSources().mobAttack(o), dmg)) {
                     Vec3 push = victim.position().subtract(position()).multiply(1.0D, 0.0D, 1.0D);
                     if (push.lengthSqr() > 1.0E-4D) victim.knockback(0.6D, -push.x, -push.z);
@@ -633,7 +695,7 @@ public class StandEntity extends Entity {
         if (slot == ANIM_SUMMON_COMBO) return com.mobstands.stand.StandAbilities.COMBO_HIT_2 + com.mobstands.stand.StandAbilities.COMBO_RECOVER;
         if (slot == ANIM_CHARGED_COMBO) return com.mobstands.stand.StandAbilities.CHARGED_HIT_2 + com.mobstands.stand.StandAbilities.COMBO_RECOVER;
         if (slot == 0 && type == StandType.SKELETON) return StandType.BOW_DRAW_TICKS + 4;
-        if (slot == 1 && type != null && type.barrage()) return com.mobstands.stand.StandAbilities.BARRAGE_TICKS;
+        if (slot == 1 && type != null && type.barrage()) return com.mobstands.stand.StandAbilities.BARRAGE_TICKS + com.mobstands.stand.StandAbilities.BARRAGE_AFTER;
         if (slot == 3 && type == StandType.SQUID) return com.mobstands.stand.StandAbilities.RAIN_SHOT_TICKS + 8;
         return slot == 0 ? 12 : slot == 3 ? 34 : 18;
     }
@@ -854,6 +916,7 @@ public class StandEntity extends Entity {
     private void followOwner(Player owner, StandType type) {
         Vec3 home = homePosition(owner, type, tickCount, side());
         if (type.isCart() && isCartRide()) home = owner.position(); // you're sitting in it
+        if (type == StandType.DOLPHIN && isCartRide()) home = owner.position().add(0.0D, DOLPHIN_RIDE_Y, 0.0D); // you're riding it
         if ((type == StandType.ENDERMAN || type == StandType.ENDER_WORLD) && behindUntilMoved) {
             // Summoned: it appears dead centre right behind you, and stays there until you move -
             // then it drifts out to its usual spot at your side.
@@ -970,14 +1033,17 @@ public class StandEntity extends Entity {
         if (cur.distanceToSqr(home) > 64.0D) {
             next = home; // teleports, respawns, dimension changes
         } else {
-            next = type == StandType.HORSE || type == StandType.SHULKER || (type.isCart() && isCartRide()) ? home : cur.add(home.subtract(cur).scale(0.45D)); // the horse head sits fixed
+            next = type == StandType.HORSE || type == StandType.SHULKER || ((type.isCart() || type == StandType.DOLPHIN) && isCartRide()) ? home : cur.add(home.subtract(cur).scale(0.45D)); // the horse head sits fixed
             Vec3 off = next.subtract(home);
             if (off.length() > MAX_DRIFT) next = home.add(off.normalize().scale(MAX_DRIFT));
         }
         setPos(next.x, next.y, next.z);
         setYRot(Mth.rotLerp(0.5F, getYRot(), owner.getYRot()));
-        setXRot(owner.getXRot() * 0.6F);
+        setXRot(type == StandType.DOLPHIN && isCartRide() ? 0.0F : owner.getXRot() * 0.6F); // ridden: level under you
     }
+
+    /** Riding the Dolphin on the rain: how high it sits relative to your feet (its back under your hips). */
+    public static final double DOLPHIN_RIDE_Y = 0.25D;
 
 
     private boolean clientFollowing() {
@@ -1022,7 +1088,7 @@ public class StandEntity extends Entity {
         }
         Vec3 pos = position();
         net.minecraft.world.entity.monster.Monster prey = null;
-        if (com.mobstands.config.StandConfig.AUTO_ASSIST.get()) {
+        if (AUTO_ASSIST) {
             double best = 81.0D;
             for (net.minecraft.world.entity.monster.Monster m : sl.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                     owner.getBoundingBox().inflate(9.0D), x -> com.mobstands.stand.StandCombat.valid(owner, x))) {
@@ -1286,6 +1352,11 @@ public class StandEntity extends Entity {
     public static final double SPIDER_BACK = 0.06D;
     public static final double SPIDER_HEIGHT = 1.15D;
 
+    /** True while it's lunging at something (an attack moving it away from you). */
+    public boolean isLunging() {
+        return entityData.get(LUNGING);
+    }
+
     public boolean isDismissing() {
         return entityData.get(DISMISS) != 0;
     }
@@ -1365,8 +1436,9 @@ public class StandEntity extends Entity {
             // Raised up on its too-long legs: it looms over your head instead of swallowing it.
             return new Vec3(x, owner.getY() + WOD_RAISE, z);
         }
-        double back = type.closeBehind() ? 0.5D : 1.15D;
-        double side = type.closeBehind() ? 0.6D : 0.85D;
+        boolean piglin = type == StandType.ZOMBIFIED_PIGLIN || type == StandType.PIGLIN || type == StandType.PIGLIN_REQUIEM;
+        double back = type.closeBehind() ? 0.5D : piglin ? 0.65D : 1.15D; // the piglins stand right at your shoulder
+        double side = type.closeBehind() ? 0.6D : piglin ? 0.6D : 0.85D;
         double x = owner.getX() - fx * back + rx * side;
         double z = owner.getZ() - fz * back + rz * side;
         double y = owner.getY() + type.hover() + Math.sin(tick * 0.08D) * 0.08D;
@@ -1395,7 +1467,10 @@ public class StandEntity extends Entity {
     private void clientTick() {
         Player owner = getOwnerPlayer();
         StandType followType = getStandType();
-        if (followType != null && clientFollowing()) followOwner(owner, followType);
+        if (followType != null && clientFollowing()) {
+            followOwner(owner, followType);
+            faceShot();
+        }
         if (localPilot()) pilotClientTick(owner);
         else wasPiloting = false;
         // Server-driven Stands (pig, roaming allay...) glide smoothly toward the latest server position.
@@ -1438,7 +1513,7 @@ public class StandEntity extends Entity {
         if (type == null || isHidden()) return;
         boolean lifting = type == StandType.ALLAY && isLifting();
         if (!isDismissing()) getOwnerUUID().ifPresent(u -> StandPresence.mark(u, type, level().getGameTime(), isPosing(), lifting,
-                type.isCart() && isCartRide(), type.isCart() ? cartBoost() : 0, false, cartBoostEnd()));
+                (type.isCart() || type == StandType.DOLPHIN) && isCartRide(), type.isCart() ? cartBoost() : 0, false, cartBoostEnd()));
         if (lifting) {
             Player liftee = getOwnerPlayer();
             if (liftee != null && liftee.isLocalPlayer()) liftOwner(liftee);
@@ -1462,20 +1537,29 @@ public class StandEntity extends Entity {
         int n = lvl == 1 ? 40 : 120; // spread over the wider area
         // Pours straight down out of the squid's body, only in the area right under it.
         double r = com.mobstands.stand.StandAbilities.RAIN_FALL_RADIUS;
+        var lv = level();
+        // Drips off its tentacles.
+        if (random.nextInt(2) == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.DRIPPING_WATER,
+                getX() + (random.nextDouble() - 0.5D) * 0.6D, getY() + 0.1D, getZ() + (random.nextDouble() - 0.5D) * 0.6D, 0.0D, 0.0D, 0.0D);
         for (int i = 0; i < n; i++) {
             double a = random.nextDouble() * Math.PI * 2.0D;
             double d = Math.sqrt(random.nextDouble()) * r;
             double x = getX() + Math.cos(a) * d;
             double z = getZ() + Math.sin(a) * d;
             double y = getY() + 0.2D + random.nextDouble() * 0.6D;
-            level().addParticle(net.minecraft.core.particles.ParticleTypes.FALLING_WATER, x, y, z, 0.0D, 0.0D, 0.0D);
+            // Where this drop actually lands (the ground right under it, wherever the Squid has drifted to).
+            double ground = lv.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, Mth.floor(x), Mth.floor(z)) + 0.05D;
+            lv.addParticle(net.minecraft.core.particles.ParticleTypes.FALLING_WATER, x, y, z, 0.0D, 0.0D, 0.0D);
+            // Splashes and little ripples where it hits the ground.
+            if (i % 5 == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.RAIN, x, ground, z, 0.0D, 0.0D, 0.0D);
+            if (i % 12 == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.FISHING, x, ground, z, 0.0D, 0.0D, 0.0D);
             if (lvl >= 2) {
                 // Downpour: sheets of water driven down hard, splashing up off the ground.
                 // (Plain falling water: dripstone drips play a "plink" every time one lands, which flooded the
                 // sound engine - hundreds a second - and cut out every other sound.)
-                if (i % 2 == 0) level().addParticle(net.minecraft.core.particles.ParticleTypes.FALLING_WATER, x, y - random.nextDouble() * 2.5D, z, 0.0D, -0.6D, 0.0D);
-                if (i % 3 == 0) level().addParticle(net.minecraft.core.particles.ParticleTypes.SPLASH, x, o.getY() + 0.1D, z, 0.0D, 0.15D, 0.0D);
-                if (i % 4 == 0) level().addParticle(net.minecraft.core.particles.ParticleTypes.RAIN, x, o.getY() + 0.1D, z, 0.0D, 0.0D, 0.0D);
+                if (i % 2 == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.FALLING_WATER, x, y - random.nextDouble() * 2.5D, z, 0.0D, -0.6D, 0.0D);
+                if (i % 3 == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.SPLASH, x, ground, z, 0.0D, 0.15D, 0.0D);
+                if (i % 6 == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.BUBBLE_POP, x, ground + 0.05D, z, 0.0D, 0.0D, 0.0D);
             }
         }
     }
@@ -1484,7 +1568,7 @@ public class StandEntity extends Entity {
 
     /** Rare and rarer Stands burst into sparkles in their own style while they materialize. */
     private void summonSparkles(StandType type) {
-        int tier = type.rarity().ordinal(); // 0 common .. 4 legendary
+        int tier = type.requiem() ? 4 : 3;
         if (!type.summonEffects()) return; // only Iron Golem, Enderman and Warden
         int count = type == StandType.AXOLOTL ? (random.nextInt(3) == 0 ? 1 : 0) // nonchalant: a few soft glints
                 : tier >= 4 ? 7 : tier == 3 ? 5 : 3;
@@ -1618,9 +1702,10 @@ public class StandEntity extends Entity {
         }
         if (isPiloting()) {
             // Flown by its pilot (positions come from their game). Too far, or they're asleep: it lands.
-            if (distanceTo(sp) > PILOT_RANGE + 40.0D || sp.isSleeping() || getStandType() != StandType.PHANTOM) setPiloting(false);
+            StandType pt = getStandType();
+            if (distanceTo(sp) > pilotRange(pt) + 40.0D || sp.isSleeping() || (pt != StandType.PHANTOM && pt != StandType.SQUID)) setPiloting(false);
             else com.mobstands.stand.StandManager.pilotCool(sp);
-            if (isPiloting() && tickCount % 4 == 0) ((ServerLevel) level()).sendParticles(net.minecraft.core.particles.ParticleTypes.SOUL,
+            if (isPiloting() && pt == StandType.PHANTOM && tickCount % 4 == 0) ((ServerLevel) level()).sendParticles(net.minecraft.core.particles.ParticleTypes.SOUL,
                     getX(), getY() + 0.3D, getZ(), 1, 0.2D, 0.05D, 0.2D, 0.0D);
             return;
         }
@@ -1634,6 +1719,7 @@ public class StandEntity extends Entity {
 
         if (allayHitCooldown > 0) allayHitCooldown--;
         if (type == StandType.ALLAY) syncAllays(data);
+        if (type == StandType.SILVERFISH) entityData.set(SWARM, data.getLevel());
         if (reformTicks > 0 && --reformTicks == 0) {
             entityData.set(HIDDEN, false);
             ((ServerLevel) level()).sendParticles(ParticleTypes.POOF, getX(), getY() + 1.0D, getZ(), 20, 0.3D, 0.5D, 0.3D, 0.05D);
@@ -1660,15 +1746,22 @@ public class StandEntity extends Entity {
             setXRot(sp.getXRot() * 0.6F);
         } else {
             followOwner(sp, type);
+            faceShot();
         }
 
         if (autoCooldown > 0) autoCooldown--;
         if (tickCount % 5 == 0) autoAssist(sp, data, type);
     }
 
-    /** The Stand reacts on its own when a hostile is attacking its owner. */
+    /**
+     * Stands never attack on their own: they only strike when you use them. (This used to be a config option, but an
+     * old config file - like one on a friend's server - could still have it switched on, so it's off for good.)
+     */
+    private static final boolean AUTO_ASSIST = false;
+
+    /** (Disabled - see AUTO_ASSIST.) The Stand reacting on its own when a hostile is attacking its owner. */
     private void autoAssist(ServerPlayer owner, StandData data, StandType type) {
-        if (autoCooldown > 0 || isHidden() || lungeTicks > 0 || !StandConfig.AUTO_ASSIST.get() || !type.hasBasic() || type == StandType.SQUID) return;
+        if (!AUTO_ASSIST || autoCooldown > 0 || isHidden() || lungeTicks > 0 || !type.hasBasic() || type == StandType.SQUID) return;
         if (animProgress(0.0F) >= 0.0F) return;
         ServerLevel sl = (ServerLevel) level();
         LivingEntity best = null;

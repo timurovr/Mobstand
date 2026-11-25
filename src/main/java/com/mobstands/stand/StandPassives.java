@@ -31,6 +31,9 @@ public final class StandPassives {
             case SKELETON -> eff(p, MobEffects.DIG_SPEED, 0, 80);
             case SPIDER -> eff(p, MobEffects.JUMP, 0, 80);
             case SQUID -> eff(p, MobEffects.WATER_BREATHING, 0, 80);
+            case DOLPHIN -> {
+                if (p.isInWater()) eff(p, MobEffects.DOLPHINS_GRACE, 0, 40); // only while you're in the water
+            }
             default -> { }
         }
     }

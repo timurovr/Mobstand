@@ -57,6 +57,8 @@ public final class GravityFlip {
         double fallAlong;
         Vec3 wander = Vec3.ZERO;
         int wanderTime;
+        /** Walking on a wall/ceiling: distance since the last footstep. */
+        double stepDist;
 
         Flip(UUID id, ServerLevel level, Direction g, long until, UUID owner, boolean self, boolean hadNoGravity) {
             this.id = id;
@@ -219,7 +221,8 @@ public final class GravityFlip {
 
     /** Your own game walked you onto another wall while Gravity Shift is on. */
     public static void requestSwitch(ServerPlayer p, int dir) {
-        if (true) return; // no longer used: gravity only changes on the server's say-so (Z, the C wheel, punches)
+        // Your own game walked you round the edge of your wall or ceiling (Crescent Shell's corner wrap).
+        if (StandManager.data(p).getType() != StandType.SHULKER) return;
         Flip f = FLIPS.get(p.getUUID());
         if (f == null || !f.self || dir < 0 || dir >= 6) return;
         Direction d = Direction.from3DDataValue(dir);
@@ -230,6 +233,8 @@ public final class GravityFlip {
         }
         f.g = d;
         f.fallAlong = 0.0D;
+        f.last = null;
+        GravityBox.refresh(p);
         send(p, d);
     }
 
@@ -237,6 +242,7 @@ public final class GravityFlip {
 
     public static void flip(LivingEntity e, Direction g, UUID owner, boolean self, long ticks) {
         if (!(e.level() instanceof ServerLevel sl)) return;
+        if (!self && Mobius.active(e)) return; // a Möbius strip has no "other way round" to turn it to
         Flip old = FLIPS.remove(e.getUUID());
         boolean hadNoGravity = old != null ? old.hadNoGravity : e.isNoGravity();
         Flip f = new Flip(e.getUUID(), sl, g, sl.getGameTime() + ticks, owner, self, hadNoGravity);
@@ -254,6 +260,12 @@ public final class GravityFlip {
             sl.playSound(null, at.x, at.y, at.z, SoundEvents.ENDER_EYE_DEATH, SoundSource.PLAYERS, 0.8F, 0.6F);
         }
         send(e, g);
+    }
+
+    /** Back to normal gravity (a Gravity Zone let go of it). */
+    public static void release(Entity e) {
+        Flip f = FLIPS.get(e.getUUID());
+        if (f != null) unflip(f);
     }
 
     private static void unflip(Flip f) {
@@ -341,6 +353,7 @@ public final class GravityFlip {
                     sp.getAbilities().mayfly = true;
                     f.grantedFly = true;
                 }
+                surfaceFx(f, sp);
             } else {
                 moveMob(f, e);
             }
@@ -394,7 +407,50 @@ public final class GravityFlip {
         if (e instanceof Mob m) m.getNavigation().stop();
     }
 
-    /** Falling "down" its own way and hitting the surface hurts, like a normal fall. */
+    /** The block a turned creature is standing on (its wall or ceiling), or null in mid-air. */
+    private static net.minecraft.core.BlockPos surface(LivingEntity e, Direction g) {
+        net.minecraft.world.phys.AABB b = e.getBoundingBox();
+        double half = g.getAxis() == Direction.Axis.X ? b.getXsize() * 0.5D : g.getAxis() == Direction.Axis.Y ? b.getYsize() * 0.5D : b.getZsize() * 0.5D;
+        Vec3 at = b.getCenter().add(vec(g).scale(half + 0.1D));
+        net.minecraft.core.BlockPos pos = net.minecraft.core.BlockPos.containing(at);
+        return e.level().getBlockState(pos).isAir() ? null : pos;
+    }
+
+    /**
+     * You walking on a wall or ceiling: footsteps everyone can hear, and when you sprint, bits of the block kicked up
+     * behind you (they fall to the real ground - someone below sees them, looks up, and there you are).
+     */
+    private static void surfaceFx(Flip f, ServerPlayer p) {
+        if (f.g == Direction.DOWN || f.last == null || !landed(p, f.g)) return;
+        Vec3 g = vec(f.g);
+        Vec3 m = p.position().subtract(f.last);
+        double along = m.subtract(g.scale(m.dot(g))).length();
+        if (along < 0.01D || along > 2.0D) return;
+        net.minecraft.core.BlockPos pos = surface(p, f.g);
+        if (pos == null) return;
+        net.minecraft.world.level.block.state.BlockState state = f.level.getBlockState(pos);
+        net.minecraft.world.level.block.SoundType st = state.getSoundType();
+        Vec3 face = p.getBoundingBox().getCenter().add(g.scale((f.g.getAxis() == Direction.Axis.Y ? p.getBoundingBox().getYsize()
+                : f.g.getAxis() == Direction.Axis.X ? p.getBoundingBox().getXsize() : p.getBoundingBox().getZsize()) * 0.5D - 0.05D));
+        // Footsteps, like walking on the ground (a step every 1.6 blocks or so).
+        f.stepDist += along;
+        if (f.stepDist >= 1.6D) {
+            f.stepDist = 0.0D;
+            f.level.playSound(null, face.x, face.y, face.z, st.getStepSound(), SoundSource.PLAYERS, st.getVolume() * 0.3F, st.getPitch());
+        }
+        // Sprinting kicks up bits of the block behind you, exactly like sprinting on the ground (walking: nothing).
+        if (p.isSprinting()) {
+            Vec3 back = m.subtract(g.scale(m.dot(g))).scale(-4.0D).add(g.scale(-1.5D)); // backward, off the surface
+            double ox = (f.level.random.nextDouble() - 0.5D) * p.getBbWidth();
+            double oz = (f.level.random.nextDouble() - 0.5D) * p.getBbWidth();
+            Vec3 side1 = f.g.getAxis() == Direction.Axis.X ? new Vec3(0, ox, oz) : f.g.getAxis() == Direction.Axis.Y ? new Vec3(ox, 0, oz) : new Vec3(ox, oz, 0);
+            Vec3 at = face.add(side1);
+            f.level.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, state),
+                    at.x, at.y, at.z, 0, back.x, back.y, back.z, 1.0D);
+        }
+    }
+
+    /** Falling "down" its own way and hitting the surface hurts, like a normal fall (not you, on your own walls). */
     private static void slam(Flip f, LivingEntity e) {
         Vec3 pos = e.position();
         if (f.last != null) {
@@ -402,7 +458,18 @@ public final class GravityFlip {
             if (along > 0.02D) {
                 f.fallAlong += along;
             } else {
-                if (f.fallAlong > 3.0D && landed(e, f.g)) {
+                if (f.self && f.fallAlong > 0.6D && landed(e, f.g)) {
+                    // You landing on your own wall or ceiling: a thud and a puff of grit - no damage.
+                    net.minecraft.core.BlockPos sp = surface(e, f.g);
+                    if (sp != null) {
+                        net.minecraft.world.level.block.state.BlockState state = f.level.getBlockState(sp);
+                        net.minecraft.world.level.block.SoundType st = state.getSoundType();
+                        f.level.playSound(null, e.getX(), e.getY(), e.getZ(), st.getFallSound(), SoundSource.PLAYERS, st.getVolume() * 0.5F, st.getPitch() * 0.75F);
+                        Vec3 at = e.getBoundingBox().getCenter().add(vec(f.g).scale(e.getBbWidth() * 0.5D));
+                        f.level.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, state),
+                                at.x, at.y, at.z, (int) Math.min(30, 6 + f.fallAlong * 3), 0.3D, 0.1D, 0.3D, 0.1D);
+                    }
+                } else if (!f.self && f.fallAlong > 3.0D && landed(e, f.g)) {
                     float dmg = (float) Math.ceil(f.fallAlong - 3.0D);
                     ServerPlayer owner = f.self || f.owner == null ? null : f.level.getServer().getPlayerList().getPlayer(f.owner);
                     if (owner != null) StandCombat.credit(owner, e);

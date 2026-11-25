@@ -203,6 +203,9 @@ public final class HorseSpin {
         for (int i = 0; i < 2; i++) {
             net.minecraft.world.item.ItemStack ball = i == 0 ? r.mainBall : r.offBall;
             if (ball.isEmpty()) continue;
+            // Out of the run first, so it can't be handed back a second time.
+            if (i == 0) r.mainBall = net.minecraft.world.item.ItemStack.EMPTY;
+            else r.offBall = net.minecraft.world.item.ItemStack.EMPTY;
             ServerPlayer p = r.rider;
             boolean given = false;
             if (!p.isRemoved()) {

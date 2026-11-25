@@ -265,12 +265,32 @@ final class StandVisual {
                         return com.google.common.collect.ImmutableList.of(sBase, sLid, sHead);
                     }
                 };
-                texture = tex("textures/entity/shulker/shulker_green.png");
+                texture = tex("textures/entity/shulker/shulker.png"); // the normal purple shulker
             }
             case MINECART -> {
                 root = ctx.bakeLayer(ModelLayers.MINECART);
                 main = new net.minecraft.client.model.MinecartModel<>(root);
                 texture = tex("textures/entity/minecart.png");
+            }
+            case LLAMA -> {
+                root = ctx.bakeLayer(ModelLayers.LLAMA);
+                main = new net.minecraft.client.model.LlamaModel<>(root);
+                texture = tex("textures/entity/llama/creamy.png");
+            }
+            case GUARDIAN -> {
+                root = ctx.bakeLayer(ModelLayers.GUARDIAN);
+                main = new net.minecraft.client.model.GuardianModel(root);
+                texture = tex("textures/entity/guardian.png");
+            }
+            case ILLUSIONER -> {
+                root = ctx.bakeLayer(ModelLayers.ILLUSIONER);
+                main = new net.minecraft.client.model.IllagerModel<>(root);
+                texture = tex("textures/entity/illager/illusioner.png");
+            }
+            case SILVERFISH -> { // (drawn as a whole swarm by SilverSwarm - this is just a fallback)
+                root = ctx.bakeLayer(ModelLayers.SILVERFISH);
+                main = new net.minecraft.client.model.SilverfishModel<>(root);
+                texture = tex("textures/entity/silverfish.png");
             }
             default -> throw new IllegalStateException("No model for " + type);
         }
@@ -286,6 +306,7 @@ final class StandVisual {
             case PIGLIN_REQUIEM -> ctx.bakeLayer(ModelLayers.PIGLIN_BRUTE);
             case GER -> ctx.bakeLayer(ModelLayers.IRON_GOLEM);
             case ZOMBIFIED_PIGLIN -> ctx.bakeLayer(ModelLayers.ZOMBIFIED_PIGLIN);
+            case ILLUSIONER -> ctx.bakeLayer(ModelLayers.ILLUSIONER);
             default -> null;
         };
         // The Blaze has no arms: it jabs with two of its own rods instead.
@@ -489,11 +510,33 @@ final class StandVisual {
             return;
         }
         if (slot == 1 && type.barrage()) {
-            // Barrage: both arms held level, pistoning straight forward and back, alternating fast.
-            float a = age * 1.5F;
-            float w = Mth.clamp(Math.min(progress, 1.0F - progress) * 6.0F, 0.0F, 1.0F);
-            jab(rArm, w, -7.0F * w * (0.5F + 0.5F * Mth.sin(a)));
-            jab(lArm, w, -7.0F * w * (0.5F - 0.5F * Mth.sin(a)));
+            float t = comboElapsed;
+            float fin = StandAbilities.BARRAGE_TICKS - 1; // the finisher lands here
+            float wind = fin - 5.0F;
+            float in = Mth.clamp(t / 2.0F, 0.0F, 1.0F);
+            if (t < wind) {
+                // Flurry: both arms held level, pistoning forward and back, alternating fast (and a touch of tremble).
+                float a = t * 1.5F;
+                float shake = 0.0F;
+                jab(rArm, in, -7.5F * in * (0.5F + 0.5F * Mth.sin(a)) + shake);
+                jab(lArm, in, -7.5F * in * (0.5F - 0.5F * Mth.sin(a)) - shake);
+            } else if (t < fin) {
+                // Wind-up: the right fist pulls way back, trembling with the build-up; the left stays out on guard.
+                float u = (t - wind) / (fin - wind);
+                float pull = u * u * (3.0F - 2.0F * u);
+                float tremble = Mth.sin(t * 2.5F) * 0.4F * pull;
+                jab(rArm, 1.0F, 4.0F * pull + tremble);
+                jab(lArm, 1.0F, -3.0F);
+            } else {
+                // Finisher: the right fist is driven all the way through, then everything eases back.
+                float after = t - fin;
+                float hit = Mth.clamp(after / 1.5F, 0.0F, 1.0F);
+                hit = hit * hit * (3.0F - 2.0F * hit);
+                float out = Mth.clamp(1.0F - (after - 3.0F) / 4.0F, 0.0F, 1.0F);
+                out = out * out * (3.0F - 2.0F * out);
+                jab(rArm, out, (4.0F - 15.0F * hit) * out);
+                jab(lArm, out, 1.5F * out);
+            }
             return;
         }
         if (slot == 0 && type == StandType.ZOMBIFIED_PIGLIN) {
@@ -507,15 +550,14 @@ final class StandVisual {
         }
         if (slot == 0 && (type.barrage() || rightArm != null)) {
             // Regular punch: the arm snaps level, then drives straight out (timed with its ghost arm and sound).
-            float first = comboPunch(comboElapsed, StandAbilities.PUNCH_HIT_TICK);
+            // The arm snaps level, then drives straight out (timed with its ghost arm and sound).
+            int h = StandAbilities.PUNCH_HIT_TICK;
             if (punchSide == 1) {
-                jab(lArm, Math.min(1.0F, first * 2.5F), -7.0F * first); // follow-up: left only
+                punchArm(lArm, comboElapsed, h); // follow-up: left only
             } else {
-                jab(rArm, Math.min(1.0F, first * 2.5F), -7.0F * first);
-                if (comboHit2 >= 0) {
-                    float second = comboPunch(comboElapsed, comboHit2);
-                    jab(lArm, Math.min(1.0F, second * 2.5F), -7.0F * second);
-                }
+                punchArm(rArm, comboElapsed, h);
+                if (comboHit2 >= 0) punchArm(lArm, comboElapsed, comboHit2);
+                else if (comboElapsed < h + 4) jab(lArm, guard(comboElapsed, h), 1.5F); // the other fist up on guard
             }
             return;
         }
@@ -547,6 +589,17 @@ final class StandVisual {
     }
 
     /** 0..1 extension of a punch that lands at tick {@code hit}: quick 3-tick wind-in, 6-tick pull back. */
+    /** A regular punch's arm: the original smooth drive out and ease back. {@code hit} = the tick it lands. */
+    private static void punchArm(ModelPart arm, float t, int hit) {
+        float p = comboPunch(t, hit);
+        jab(arm, Math.min(1.0F, p * 2.5F), -7.0F * p);
+    }
+
+    /** How high the off hand is held on guard during a single punch. */
+    private static float guard(float t, int hit) {
+        return Mth.clamp(t / 2.0F, 0.0F, 1.0F) * Mth.clamp((hit + 4.0F - t) / 3.0F, 0.0F, 1.0F);
+    }
+
     static float comboPunch(float t, int hit) {
         if (t < hit - 3 || t > hit + 6) return 0.0F;
         if (t <= hit) {
@@ -638,6 +691,9 @@ final class StandVisual {
     private float lookAround;
     /** GER: 0..1 how far into its pose it is (the arm rises smoothly), and the last age seen. */
     private float gerPose, gerLastAge = -1.0F;
+    /** Pigstep's pose, faded in and out (0..1). */
+    private float pigPose;
+    private float pigLastAge = -1.0F;
 
     private static void rot(ModelPart p, float x, float y, float z) {
         if (p == null) return;
@@ -807,6 +863,24 @@ final class StandVisual {
             rot(part("right_leg"), 0.0F, 0.0F, 0.0F);
             rot(part("left_leg"), 0.0F, 0.0F, 0.0F);
             return;
+        }
+        if (type == StandType.PIGLIN_REQUIEM) {
+            // Pigstep: the boss of the Bastion. Arms folded high across its chest, chin up, looking down its snout
+            // at whoever's in front of you; feet planted wide, leaning back a touch, shoulders rising with each
+            // slow breath. Fades in as you strike your pose.
+            float step = pigLastAge < 0.0F ? 0.0F : Mth.clamp(age - pigLastAge, 0.0F, 2.0F);
+            pigLastAge = age;
+            pigPose = Mth.clamp(pigPose + (posing ? 0.07F : -0.1F) * step, 0.0F, 1.0F);
+            float w = pigPose * pigPose * (3.0F - 2.0F * pigPose);
+            if (w > 0.001F) {
+            headRot(part("head"), -0.2F * w, -lookAround * (1.0F - w), 0.0F);
+            rot(part("body"), -0.06F * w, 0.0F, 0.0F);
+            rot(part("right_arm"), Mth.lerp(w, b * 0.3F, -1.3F + b * 0.4F), Mth.lerp(w, 0.0F, -0.8F), Mth.lerp(w, 0.03F, 0.05F));
+            rot(part("left_arm"), Mth.lerp(w, -b * 0.3F, -1.15F + b * 0.4F), Mth.lerp(w, 0.0F, 0.8F), Mth.lerp(w, -0.03F, -0.05F));
+            rot(part("right_leg"), 0.0F, 0.0F, 0.14F * w);
+            rot(part("left_leg"), 0.0F, 0.0F, -0.14F * w);
+            return;
+            }
         }
         switch (type) {
             case SKELETON -> {

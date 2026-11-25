@@ -64,6 +64,12 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
     public void render(StandEntity stand, float yaw, float partial, PoseStack ps, MultiBufferSource buffers, int light) {
         StandType type = stand.getStandType();
         if (type == null || stand.isHidden() ) return;
+        if (type == StandType.SLIME && stand.disguise() >= 0 && stand.getOwnerPlayer() != Minecraft.getInstance().player) return; // (in disguise)
+        if (type == StandType.ILLUSIONER && stand.isVanished() && stand.getOwnerPlayer() != Minecraft.getInstance().player) return; // (vanished)
+        if (type == StandType.SILVERFISH) {
+            SilverSwarm.render(stand, partial, ps, buffers);
+            return;
+        }
         StandVisual vis = visuals.computeIfAbsent(type, t -> {
             StandVisual v = new StandVisual(t, context);
             MODEL_OWNERS.put(v.main, v);
@@ -104,7 +110,11 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         Entity dummy = vis.dummy(stand.level());
         if (dummy == null) return;
 
-        float bodyYaw = Mth.rotLerp(partial, stand.yRotO, stand.getYRot());
+        // Smooth out every snap and stutter (see Smooth): draw it where the smoothing says, not where the raw
+        // position is this frame.
+        Smooth sm = smooth(stand, type, partial);
+        ps.translate(sm.ox, sm.oy, sm.oz);
+        float bodyYaw = sm.yaw;
         // (Piloted: the whole body pitches instead - the head stays put on the body.)
         float pitch = stand.isPiloting() ? 0.0F : Mth.clamp(Mth.lerp(partial, stand.xRotO, stand.getXRot()), -35.0F, 35.0F);
         float age = stand.tickCount + partial;
@@ -127,6 +137,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             float fOut = stand.dismissProgress(partial);
             renderAllayWorld(stand, vis, partial, ps, buffers, fIn * fIn * (3.0F - 2.0F * fIn) * (1.0F - fOut * fOut * (3.0F - 2.0F * fOut)));
         }
+        // (Requiems arrive nonchalantly: no entrance effects, they just fade in.)
         ps.pushPose();
         if (!stand.isPiloting()) firstPersonShift(stand, type, progress, partial, ps);
         ps.mulPose(Axis.YP.rotationDegrees(180.0F - bodyYaw));
@@ -168,7 +179,9 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             }
             ps.mulPose(Axis.XP.rotationDegrees(90.0F * cling));
         }
-        if (stand.isPiloting()) {
+        if (stand.isPiloting() && type == StandType.SQUID) {
+            // The Squid stays upright while you steer it: no tipping over when you look up or down, no banking.
+        } else if (stand.isPiloting()) {
             // Flying level, banking into turns: turn left and it tips its left wing down, turn right and the right.
             float turnRate = Mth.wrapDegrees(stand.getYRot() - stand.yRotO);
             stand.pilotBank += (Mth.clamp(-turnRate * 3.0F, -40.0F, 40.0F) - stand.pilotBank) * 0.15F;
@@ -274,8 +287,14 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             if (type == StandType.WARDEN_REQUIEM) {
                 tint = (((tint >> 16) & 0xFF) * 3 / 20 << 16) | (((tint >> 8) & 0xFF) * 3 / 20 << 8) | ((tint & 0xFF) * 3 / 20);
             }
+            if (type == StandType.GER) {
+                // GER burns brighter than the others: a strong emerald swirl that breathes in and out.
+                float breathe = 0.8F + 0.2F * Mth.sin((stand.tickCount + partial) * 0.09F);
+                tint = scaleRgb(0x3CFF8A, 0.6F * breathe);
+            }
             vis.main.renderToBuffer(ps, swirl, packedLight, OverlayTexture.NO_OVERLAY, ((int) (255.0F * eased) << 24) | tint);
             ps.popPose();
+            if (type == StandType.GER) gerAura(stand, vis, partial, eased, cy, ps, buffers, packedLight);
         }
         if (vis.outer != null) {
             VertexConsumer shell = buffers.getBuffer(RenderType.entityTranslucent(vis.texture));
@@ -283,7 +302,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
 
         // Rare and rarer Stands flare up with a bright aura while they materialize, then settle to solid.
-        int tier = type.rarity().ordinal();
+        int tier = type.requiem() ? 4 : 3;
         if (type.summonEffects()
                 && age < StandEntity.fadeTicks(type) + 10 && !stand.isDismissing()) {
             float k = age / (StandEntity.fadeTicks(type) + 10.0F);
@@ -306,28 +325,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         }
         // ORA barrage (the Barrage ability): big fists keep flying out of the Stand for the whole move.
         if (ATTACK_FX && slot == 1 && progress >= 0.0F && vis.rightArm != null && type.barrage()) {
-            float elapsed = stand.animElapsed(partial);
-            float fadeEdge = Mth.clamp(Math.min(progress, 1.0F - progress) * 8.0F, 0.0F, 1.0F);
-            final int fists = 9;
-            for (int i = 0; i < fists; i++) {
-                float t = (elapsed * 0.2F + i * 0.381F) % 1.0F;
-                float e = Mth.sin(t * Mth.PI) * fadeEdge;
-                if (e <= 0.02F) continue;
-                float sx = Mth.sin(i * 2.399F + (int) (elapsed * 0.2F + i * 0.381F) * 1.3F) * 0.6F;
-                float sy = 0.3F + Mth.cos(i * 1.7F + (int) (elapsed * 0.2F + i * 0.381F) * 0.9F) * 0.3F;
-                float sz = -(0.25F + e * 2.3F);
-                ps.pushPose();
-                ps.translate(sx, sy, sz);
-                ps.mulPose(Axis.ZP.rotationDegrees(i * 47.0F));
-                float sc = 0.8F + e * 0.55F;
-                ps.scale(sc, sc, sc);
-                // Fetch the buffer right before drawing: drawing a glow in between switches buffers and closes the old one.
-                StandVisual.ArmPiece armPiece = vis.arm(i % 2 == 1);
-                drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), armPiece, packedLight, 0xFFFFFFFF, 1.0F);
-                armGlow(ps, buffers, armPiece, 0.34F * e, 1.16F, aura);
-                armGlow(ps, buffers, armPiece, 0.16F * e, 1.45F - 0.2F * e, aura);
-                ps.popPose();
-            }
+            drawBarrage(ps, buffers, vis, stand.animElapsed(partial), packedLight, aura);
         }
 
         // Summon-punch combo: two big ghost fists, one per impact in the sound (right, then left).
@@ -361,33 +359,9 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
             for (int k = 0; k < 2; k++) {
                 if (hits[k] < 0 || (leftOnly && k == 1)) continue; // single click: right fist only
                 if (type == StandType.ZOMBIFIED_PIGLIN && k == 0 && !leftOnly) continue; // pokes with its real sword instead of a ghost fist
-                // A quick MUDA burst: a handful of spinning, double-glowing fists fired around the moment of impact,
-                // just like the barrage - only short.
-                float baseX = k == 0 && !leftOnly ? -0.35F : 0.35F;
-                for (int j = 0; j < 4; j++) {
-                    float start = hits[k] - 3.0F + j * 1.4F;
-                    float t = (tp - start) / 5.0F;
-                    if (t <= 0.0F || t >= 1.0F) continue;
-                    float e = Mth.sin(t * Mth.PI);
-                    if (e <= 0.02F) continue;
-                    float sx = baseX + Mth.sin(j * 2.399F + k * 1.1F) * 0.28F;
-                    float sy = 0.3F + Mth.cos(j * 1.7F + k * 0.8F) * 0.22F;
-                    ps.pushPose();
-                    ps.translate(sx, sy, -(0.25F + e * 2.3F));
-                    ps.mulPose(Axis.ZP.rotationDegrees(j * 47.0F + k * 30.0F));
-                    float sc = 0.8F + e * 0.55F;
-                    ps.scale(sc, sc, sc);
-                    // Fetch the buffer right before drawing: drawing a glow in between switches buffers and closes the old one.
-                    StandVisual.ArmPiece armPiece = vis.arm(((j + k) % 2 == 1) != leftOnly);
-                    drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), armPiece, packedLight, 0xFFFFFFFF, 1.0F);
-                    armGlow(ps, buffers, armPiece, 0.34F * e, 1.16F, aura);
-                    armGlow(ps, buffers, armPiece, 0.16F * e, 1.45F - 0.2F * e, aura);
-                    ps.popPose();
-                }
-            }
-            for (int k = 0; k < 2; k++) {
-                if (hits[k] < 0 || (leftOnly && k == 1)) continue;
-                impactBurst(ps, buffers, vis.arm(k == 1 || leftOnly), tp - hits[k], k == 0 && !leftOnly ? -0.35F : 0.35F, 2.2F, 1.6F, aura);
+                float punchX = k == 0 && !leftOnly ? -0.35F : 0.35F;
+                drawPunch(ps, buffers, vis, tp - hits[k], punchX, ((k == 1) != leftOnly) ? 1 : 0, k * 3 + (leftOnly ? 1 : 0), packedLight, aura);
+                if (type == StandType.GER) zeroRings(ps, buffers, tp - hits[k], punchX * 0.25F);
             }
         }
 
@@ -691,6 +665,448 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         vc.addVertex(m, x - h, y - h, 0.0F).setColor(r, g, b, al);
     }
 
+    // ---- Requiem summoning ----
+
+    /** How long the summoning effects play on after the Requiem has fully faded in (ticks). */
+    private static final int REQ_SPAWN_TAIL = 22;
+    private static final java.util.Map<Integer, Integer> REQ_SPAWN_TICK = new java.util.HashMap<>();
+
+    /**
+     * A Requiem arriving - each in its own way (only effects around it: its pose and fade-in are untouched):
+     * <ul>
+     *   <li>The Ender World: a giant golden clock face opens on the ground, its hands racing round... and stopping
+     *   dead the moment it arrives, with a flash of negative light.</li>
+     *   <li>GER: golden rings close in from far away and shrink down to nothing on it - returned to zero - then a
+     *   ring of gold and emerald blasts back out.</li>
+     *   <li>Pigstep: a giant amethyst music disc spins up under its feet, notes rising off it, and amethyst shards
+     *   burst up out of the ground around it.</li>
+     *   <li>Green Detonator: a jagged bolt of charged lightning cracks down onto the spot, with sparks and arcs.</li>
+     *   <li>Wonder of Deep: no light at all - darkness and sculk spreading over the ground, souls drifting up.</li>
+     * </ul>
+     */
+    private static void requiemSpawn(StandEntity stand, StandType type, float t, PoseStack ps, MultiBufferSource buffers) {
+        float fade = StandEntity.fadeTicks(type);
+        float end = fade + REQ_SPAWN_TAIL;
+        float h = stand.getBbHeight();
+        float size = Math.max(0.8F, stand.getBbWidth()) * 1.3F;
+        int aura = StandHud.auraColor(type);
+        float out = Mth.clamp((end - t) / 8.0F, 0.0F, 1.0F);
+        boolean newTick = spawnTick(stand);
+        var lv = stand.level();
+        var rnd = lv.random;
+        switch (type) {
+            case ENDER_WORLD -> {
+                int gold = 0xF2C744;
+                float ck = Mth.clamp(t / 7.0F, 0.0F, 1.0F);
+                float cr = size * (0.4F + 1.4F * (1.0F - (1.0F - ck) * (1.0F - ck) * (1.0F - ck)));
+                ps.pushPose();
+                flat(ps, 0.03F);
+                ring(ps, buffers, cr, 0.06F, gold, 0.9F * out);
+                ring(ps, buffers, cr * 0.93F, 0.02F, 0xFFFFFF, 0.5F * out);
+                for (int i = 0; i < 12; i++) {
+                    float a = Mth.TWO_PI * i / 12.0F;
+                    ps.pushPose();
+                    ps.translate(Mth.cos(a) * cr * 0.82F, Mth.sin(a) * cr * 0.82F, 0.0F);
+                    disc(ps, buffers, i % 3 == 0 ? 0.14F : 0.08F, i % 3 == 0 ? 0xFFFFFF : gold, 0.85F * out);
+                    ps.popPose();
+                }
+                // the hands race round... and stop dead when it arrives
+                float spin = Math.min(t, fade);
+                float k = Mth.clamp(spin / fade, 0.0F, 1.0F);
+                float minute = (float) (Math.PI * 2.0D) * (3.0F * k - 1.2F * k * k);
+                bar(ps, buffers, minute, cr * 0.75F, 0.06F, 0xFFFFFF, 0.9F * out);
+                bar(ps, buffers, minute / 12.0F + 1.0F, cr * 0.45F, 0.09F, gold, 0.9F * out);
+                disc(ps, buffers, 0.18F, 0xFFFFFF, 0.9F * out);
+                disc(ps, buffers, cr, gold, 0.15F * out);
+                ps.popPose();
+                flash(ps, buffers, t, fade, h, 0x8C6CFF, 0xFFFFFF); // a flash of negative (violet) light
+            }
+            case GER -> {
+                ps.pushPose();
+                flat(ps, 0.04F);
+                // golden rings closing in from far away, shrinking to nothing on it
+                for (int i = 0; i < 4; i++) {
+                    float k = Mth.clamp((t + i * 2.0F) / (fade + 6.0F), 0.0F, 1.0F);
+                    if (k >= 1.0F) continue;
+                    float r = size * 5.0F * (1.0F - k) * (1.0F - k);
+                    ring(ps, buffers, r, 0.08F * (1.0F - k) + 0.02F, i % 2 == 0 ? 0xF2C744 : 0x3CFF8A, 0.85F * Mth.sin(k * Mth.PI));
+                }
+                // ...then it's at zero: a ring of gold and emerald blasts back out
+                float sk = Mth.clamp((t - fade) / 12.0F, 0.0F, 1.0F);
+                if (t >= fade && sk < 1.0F) {
+                    float se = 1.0F - (1.0F - sk) * (1.0F - sk);
+                    ring(ps, buffers, size * (0.5F + 3.2F * se), 0.22F * (1.0F - sk) + 0.03F, 0xF2C744, 0.9F * (1.0F - sk));
+                    ring(ps, buffers, size * (0.3F + 2.4F * se), 0.1F * (1.0F - sk) + 0.02F, 0x3CFF8A, 0.8F * (1.0F - sk));
+                }
+                ps.popPose();
+                // a column of gold standing on it while it forms
+                float pk = Mth.clamp(t / fade, 0.0F, 1.0F);
+                pillar(ps, buffers, 0.0F, h * 2.5F, size * 0.45F * pk * (1.0F - pk) * 4.0F * 0.5F, 0xF2C744, 0.5F * Mth.sin(pk * Mth.PI));
+                flash(ps, buffers, t, fade, h, 0xF2C744, 0xFFFFFF);
+                if (newTick && t < fade) {
+                    for (int i = 0; i < 6; i++) {
+                        double a = rnd.nextDouble() * Math.PI * 2.0D, rr = size * 4.0D * (1.0D - t / fade);
+                        lv.addParticle(net.minecraft.core.particles.ParticleTypes.END_ROD, stand.getX() + Math.cos(a) * rr, stand.getY() + 0.1D,
+                                stand.getZ() + Math.sin(a) * rr, -Math.cos(a) * 0.15D, 0.02D, -Math.sin(a) * 0.15D);
+                    }
+                }
+            }
+            case PIGLIN_REQUIEM -> {
+                int am = 0xB46BFF;
+                float dk = Mth.clamp(t / 6.0F, 0.0F, 1.0F);
+                float dr = size * (0.3F + 1.2F * (1.0F - (1.0F - dk) * (1.0F - dk)));
+                ps.pushPose();
+                flat(ps, 0.03F);
+                ps.mulPose(Axis.ZP.rotationDegrees(t * 14.0F)); // spinning like a record
+                // the grooves, the label, the hole
+                for (int i = 0; i < 4; i++) ring(ps, buffers, dr * (0.55F + i * 0.13F), 0.015F, 0xDDCCFF, 0.35F * out);
+                ring(ps, buffers, dr, 0.05F, am, 0.9F * out);
+                disc(ps, buffers, dr * 0.42F, am, 0.7F * out);
+                ring(ps, buffers, dr * 0.42F, 0.03F, 0xF2C744, 0.8F * out);
+                // a glint sweeping round
+                ps.pushPose();
+                ps.translate(dr * 0.75F, 0.0F, 0.0F);
+                disc(ps, buffers, 0.22F, 0xFFFFFF, 0.6F * out);
+                ps.popPose();
+                ps.popPose();
+                // amethyst shards bursting up round it
+                float sk = Mth.clamp((t - 2.0F) / 6.0F, 0.0F, 1.0F);
+                for (int i = 0; i < 7; i++) {
+                    float a = Mth.TWO_PI * i / 7.0F + 0.4F;
+                    float sh = (0.6F + 0.5F * ((i * 37) % 5) / 5.0F) * sk * h * 0.6F;
+                    ps.pushPose();
+                    ps.translate(Mth.cos(a) * size * 1.3F, 0.0F, Mth.sin(a) * size * 1.3F);
+                    pillar(ps, buffers, 0.0F, sh, 0.12F * (1.0F - 0.3F * sk), am, 0.75F * out);
+                    pillar(ps, buffers, 0.0F, sh * 0.8F, 0.04F, 0xFFFFFF, 0.7F * out);
+                    ps.popPose();
+                }
+                flash(ps, buffers, t, fade, h, am, 0xFFFFFF);
+                if (newTick && t < end - 6) {
+                    // notes rising off the record
+                    double a = rnd.nextDouble() * Math.PI * 2.0D, rr = size * rnd.nextDouble();
+                    lv.addParticle(net.minecraft.core.particles.ParticleTypes.NOTE, stand.getX() + Math.cos(a) * rr, stand.getY() + 0.3D,
+                            stand.getZ() + Math.sin(a) * rr, rnd.nextDouble(), 0.0D, 0.0D);
+                }
+            }
+            case CREEPER_REQUIEM -> {
+                int blue = 0x7FD4FF;
+                // the bolt: a jagged line of charged light cracking down from the sky, flickering out
+                float bk = Mth.clamp(t / (fade + 4.0F), 0.0F, 1.0F);
+                if (bk < 1.0F) {
+                    float flick = ((int) (t * 2.0F) % 3 == 0) ? 0.5F : 1.0F;
+                    long seed = stand.getId() * 31L + (int) (t / 3.0F);
+                    java.util.Random r = new java.util.Random(seed);
+                    float y = 26.0F, x = 0.0F, z = 0.0F;
+                    float a = (1.0F - bk) * flick;
+                    while (y > 0.0F) {
+                        float ny = Math.max(0.0F, y - 1.5F - r.nextFloat() * 1.5F);
+                        float nx = ny <= 0.0F ? 0.0F : (r.nextFloat() - 0.5F) * 1.4F;
+                        float nz = ny <= 0.0F ? 0.0F : (r.nextFloat() - 0.5F) * 1.4F;
+                        bolt(ps, buffers, x, y, z, nx, ny, nz, 0.35F, blue, 0.45F * a);
+                        bolt(ps, buffers, x, y, z, nx, ny, nz, 0.1F, 0xFFFFFF, 0.95F * a);
+                        x = nx; y = ny; z = nz;
+                    }
+                }
+                ps.pushPose();
+                flat(ps, 0.04F);
+                float sk = Mth.clamp(t / 10.0F, 0.0F, 1.0F);
+                ring(ps, buffers, size * (0.4F + 2.6F * (1.0F - (1.0F - sk) * (1.0F - sk))), 0.18F * (1.0F - sk) + 0.03F, blue, 0.9F * (1.0F - sk));
+                disc(ps, buffers, size * 1.2F, blue, 0.4F * (1.0F - sk));
+                ps.popPose();
+                flash(ps, buffers, t, 1.0F, h, blue, 0xFFFFFF);
+                if (newTick && t < end - 4) {
+                    for (int i = 0; i < 4; i++) lv.addParticle(net.minecraft.core.particles.ParticleTypes.ELECTRIC_SPARK,
+                            stand.getX() + (rnd.nextDouble() - 0.5D) * size * 2.0D, stand.getY() + rnd.nextDouble() * h, stand.getZ() + (rnd.nextDouble() - 0.5D) * size * 2.0D,
+                            (rnd.nextDouble() - 0.5D) * 0.3D, 0.05D, (rnd.nextDouble() - 0.5D) * 0.3D);
+                }
+            }
+            case WARDEN_REQUIEM -> {
+                // No light. Darkness and sculk spread across the ground; souls drift up out of it.
+                ps.pushPose();
+                flat(ps, 0.03F);
+                float k = Mth.clamp(t / (fade + 8.0F), 0.0F, 1.0F);
+                float r = size * (0.5F + 2.2F * (1.0F - (1.0F - k) * (1.0F - k)));
+                ring(ps, buffers, r, 0.05F, 0x0F5A6B, 0.5F * out);
+                ring(ps, buffers, r * 0.7F, 0.03F, 0x0A3A47, 0.4F * out);
+                ps.popPose();
+                if (newTick && t < end - 4) {
+                    for (int i = 0; i < 5; i++) {
+                        double a = rnd.nextDouble() * Math.PI * 2.0D, rr = r * rnd.nextDouble();
+                        double px = stand.getX() + Math.cos(a) * rr, pz = stand.getZ() + Math.sin(a) * rr;
+                        lv.addParticle(net.minecraft.core.particles.ParticleTypes.SQUID_INK, px, stand.getY() + 0.1D, pz, 0.0D, 0.01D, 0.0D);
+                        if (i == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.SCULK_SOUL, px, stand.getY() + 0.2D, pz, 0.0D, 0.04D, 0.0D);
+                        if (i == 1) lv.addParticle(net.minecraft.core.particles.ParticleTypes.SCULK_CHARGE_POP, px, stand.getY() + 0.1D, pz, 0.0D, 0.0D, 0.0D);
+                    }
+                }
+                return; // no flash, no motes of light
+            }
+            default -> { }
+        }
+        // Motes of its colour spiralling up round it.
+        if (newTick) {
+            org.joml.Vector3f col = new org.joml.Vector3f(((aura >> 16) & 0xFF) / 255.0F, ((aura >> 8) & 0xFF) / 255.0F, (aura & 0xFF) / 255.0F);
+            var dust = new net.minecraft.core.particles.DustParticleOptions(col, 1.1F);
+            for (int i = 0; i < 2; i++) {
+                double a = stand.tickCount * 0.5D + i * Math.PI;
+                double rr = size * (1.0D - Math.min(1.0D, t / end) * 0.5D);
+                double y = (stand.tickCount * 0.12D + i * 0.4D) % Math.max(1.0D, h);
+                lv.addParticle(dust, stand.getX() + Math.cos(a) * rr, stand.getY() + y, stand.getZ() + Math.sin(a) * rr, 0.0D, 0.0D, 0.0D);
+            }
+        }
+    }
+
+    /** True once per game tick per Stand (so particles spawn per tick, not per frame). */
+    private static boolean spawnTick(StandEntity stand) {
+        Integer last = REQ_SPAWN_TICK.get(stand.getId());
+        if (last != null && last == stand.tickCount) return false;
+        REQ_SPAWN_TICK.put(stand.getId(), stand.tickCount);
+        if (REQ_SPAWN_TICK.size() > 64) REQ_SPAWN_TICK.clear();
+        return true;
+    }
+
+    /** Lays the pose flat on the ground (XY plane becomes the ground), just above it. */
+    private static void flat(PoseStack ps, float lift) {
+        ps.translate(0.0F, lift, 0.0F);
+        ps.mulPose(Axis.XP.rotationDegrees(90.0F));
+    }
+
+    /** The flash as it arrives (bright for a moment round its body), in two colours. */
+    private static void flash(PoseStack ps, MultiBufferSource buffers, float t, float at, float h, int outer, int inner) {
+        float fk = (t - (at - 2.0F)) / 6.0F;
+        if (fk <= 0.0F || fk >= 1.0F) return;
+        ps.pushPose();
+        ps.translate(0.0F, h * 0.55F, 0.0F);
+        ps.mulPose(Minecraft.getInstance().getEntityRenderDispatcher().cameraOrientation());
+        float bell = Mth.sin(fk * Mth.PI);
+        disc(ps, buffers, h * (0.6F + 0.6F * fk), outer, 0.6F * bell);
+        disc(ps, buffers, h * (0.3F + 0.3F * fk), inner, 0.9F * bell);
+        ps.popPose();
+    }
+
+    /** A clock hand in the XY plane: from the middle out at angle a (0 = twelve o'clock, clockwise). */
+    private static void bar(PoseStack ps, MultiBufferSource buffers, float a, float len, float w, int rgb, float alpha) {
+        if (alpha <= 0.01F) return;
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        org.joml.Matrix4f m = ps.last().pose();
+        int al = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        float dx = Mth.sin(a), dy = Mth.cos(a), px = -dy * w * 0.5F, py = dx * w * 0.5F;
+        float ex = dx * len, ey = dy * len;
+        vc.addVertex(m, px, py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, -px, -py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, ex - px, ey - py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, ex + px, ey + py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, ex + px, ey + py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, ex - px, ey - py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, -px, -py, 0.0F).setColor(r, g, b, al);
+        vc.addVertex(m, px, py, 0.0F).setColor(r, g, b, al);
+    }
+
+    /** One straight piece of a lightning bolt (crossed quads) between two points. */
+    private static void bolt(PoseStack ps, MultiBufferSource buffers, float x0, float y0, float z0, float x1, float y1, float z1, float w, int rgb, float alpha) {
+        if (alpha <= 0.01F) return;
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        org.joml.Matrix4f m = ps.last().pose();
+        int al = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        for (int k = 0; k < 2; k++) {
+            float dx = k == 0 ? w : 0.0F, dz = k == 0 ? 0.0F : w;
+            vc.addVertex(m, x0 - dx, y0, z0 - dz).setColor(r, g, b, al);
+            vc.addVertex(m, x0 + dx, y0, z0 + dz).setColor(r, g, b, al);
+            vc.addVertex(m, x1 + dx, y1, z1 + dz).setColor(r, g, b, al);
+            vc.addVertex(m, x1 - dx, y1, z1 - dz).setColor(r, g, b, al);
+            vc.addVertex(m, x1 - dx, y1, z1 - dz).setColor(r, g, b, al);
+            vc.addVertex(m, x1 + dx, y1, z1 + dz).setColor(r, g, b, al);
+            vc.addVertex(m, x0 + dx, y0, z0 + dz).setColor(r, g, b, al);
+            vc.addVertex(m, x0 - dx, y0, z0 - dz).setColor(r, g, b, al);
+        }
+    }
+
+    /** A vertical beam of light (crossed quads, so it's round from any side) from y0 to y1, w wide. */
+    private static void pillar(PoseStack ps, MultiBufferSource buffers, float y0, float y1, float w, int rgb, float alpha) {
+        if (alpha <= 0.01F || w <= 0.001F || y1 <= y0) return;
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        org.joml.Matrix4f m = ps.last().pose();
+        int a = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        for (int k = 0; k < 2; k++) {
+            float dx = k == 0 ? w : 0.0F, dz = k == 0 ? 0.0F : w;
+            // faint at the top, bright at the bottom
+            vc.addVertex(m, -dx, y0, -dz).setColor(r, g, b, a);
+            vc.addVertex(m, dx, y0, dz).setColor(r, g, b, a);
+            vc.addVertex(m, dx, y1, dz).setColor(r, g, b, 0);
+            vc.addVertex(m, -dx, y1, -dz).setColor(r, g, b, 0);
+            vc.addVertex(m, -dx, y1, -dz).setColor(r, g, b, 0);
+            vc.addVertex(m, dx, y1, dz).setColor(r, g, b, 0);
+            vc.addVertex(m, dx, y0, dz).setColor(r, g, b, a);
+            vc.addVertex(m, -dx, y0, -dz).setColor(r, g, b, a);
+        }
+    }
+
+    // ---- smoothing ----
+
+    /** Per Stand: where it was drawn last frame, how it's moving, and the offset applied this frame. */
+    private static final class Smooth {
+        double x, y, z, lx, ly, lz;
+        float yaw, lyaw;
+        long nanos, lastLunge;
+        boolean init;
+        double ox, oy, oz;
+    }
+
+    private static final java.util.Map<Integer, Smooth> SMOOTH = new java.util.HashMap<>();
+
+    /**
+     * Stands were jumpy: whenever one attacked it switched from following you on your own screen to following the
+     * server for its lunge (and back again afterwards) - each switch a visible snap - and the server's positions
+     * arrive in uneven steps, so lunges stuttered; its facing jumped at the same moments. This draws each Stand
+     * through a smoothing layer:
+     * - following you, it moves exactly with you (no lag), but any sudden jump is eased out instead of snapping;
+     * - lunging (and just after), it glides smoothly through the server's uneven steps;
+     * - its facing eases the same way.
+     * Stands that sit on you (on your back or shoulder, ridden, piloted) are left exactly where they are.
+     */
+    private static Smooth smooth(StandEntity stand, StandType type, float partial) {
+        Smooth s = SMOOTH.computeIfAbsent(stand.getId(), k -> new Smooth());
+        if (SMOOTH.size() > 128) SMOOTH.keySet().removeIf(id -> stand.level().getEntity(id) == null);
+        double tx = Mth.lerp(partial, stand.xo, stand.getX()), ty = Mth.lerp(partial, stand.yo, stand.getY()), tz = Mth.lerp(partial, stand.zo, stand.getZ());
+        float tyaw = Mth.rotLerp(partial, stand.yRotO, stand.getYRot());
+        long now = System.nanoTime();
+        double dt = s.init ? Math.min(0.1D, (now - s.nanos) / 1.0E9D) : 0.0D;
+        boolean attached = type == StandType.SPIDER || type == StandType.SHULKER || stand.isPiloting() || stand.isCartRide();
+        boolean lunging = stand.isLunging();
+        if (lunging) s.lastLunge = now;
+        boolean afterLunge = (now - s.lastLunge) < 300_000_000L;
+        double jump = Math.sqrt((tx - s.lx) * (tx - s.lx) + (ty - s.ly) * (ty - s.ly) + (tz - s.lz) * (tz - s.lz));
+        if (!s.init || jump > 24.0D || (attached && !lunging)) {
+            // First frame, a real teleport, or riding on you: exactly where it is.
+            s.x = tx; s.y = ty; s.z = tz; s.yaw = tyaw;
+        } else if (dt > 0.0D) {
+            double pull;
+            if (lunging || afterLunge) {
+                // Lunging: glide after the server's steps.
+                pull = 1.0D - Math.exp(-dt * 16.0D);
+            } else {
+                // Following: move with it exactly (unless this frame's move was a snap), then close any gap left.
+                if (jump < 0.6D) {
+                    s.x += tx - s.lx; s.y += ty - s.ly; s.z += tz - s.lz;
+                }
+                pull = 1.0D - Math.exp(-dt * 14.0D);
+            }
+            s.x += (tx - s.x) * pull;
+            s.y += (ty - s.y) * pull;
+            s.z += (tz - s.z) * pull;
+            // Facing: turn with it, but ease out any sudden swing.
+            float dyaw = Mth.wrapDegrees(tyaw - s.lyaw);
+            if (Math.abs(dyaw) < 25.0F) s.yaw += dyaw;
+            s.yaw += Mth.wrapDegrees(tyaw - s.yaw) * (float) (1.0D - Math.exp(-dt * 18.0D));
+        }
+        s.lx = tx; s.ly = ty; s.lz = tz; s.lyaw = tyaw;
+        s.nanos = now;
+        s.init = true;
+        s.ox = s.x - tx;
+        s.oy = s.y - ty;
+        s.oz = s.z - tz;
+        return s;
+    }
+
+    private static int scaleRgb(int rgb, float k) {
+        return ((int) (((rgb >> 16) & 0xFF) * k) << 16) | ((int) (((rgb >> 8) & 0xFF) * k) << 8) | (int) ((rgb & 0xFF) * k);
+    }
+
+    private static final java.util.Map<Integer, Integer> GER_MOTE_TICK = new java.util.HashMap<>();
+
+    /**
+     * GER's aura, on top of the Requiem swirl: a second, bigger swirl of gold crawling the other way, a soft golden
+     * glow breathing round its whole body, and gold and emerald motes drifting up off it.
+     */
+    private static void gerAura(StandEntity stand, StandVisual vis, float partial, float eased, float cy, PoseStack ps, MultiBufferSource buffers, int light) {
+        float t = stand.tickCount + partial;
+        float breathe = 0.5F + 0.5F * Mth.sin(t * 0.09F);
+        // The outer swirl: bigger, gold, crawling the other way.
+        float scroll = t * 0.006F;
+        VertexConsumer swirl = buffers.getBuffer(RenderType.energySwirl(REQUIEM_SWIRL, (-scroll) % 1.0F + 1.0F, scroll % 1.0F));
+        ps.pushPose();
+        ps.translate(0.0F, cy, 0.0F);
+        float sc = 1.11F + 0.02F * breathe;
+        ps.scale(sc, sc * 0.98F, sc);
+        ps.translate(0.0F, -cy, 0.0F);
+        vis.main.renderToBuffer(ps, swirl, light, OverlayTexture.NO_OVERLAY, ((int) (255.0F * eased) << 24) | scaleRgb(0xF2C744, 0.35F + 0.15F * breathe));
+        ps.popPose();
+        // A soft golden glow round the whole body.
+        glow(ps, buffers, vis.main, (0.1F + 0.08F * breathe) * eased, 1.05F + 0.03F * breathe, 0xF2C744, cy, true);
+        // Motes drifting up off it (a few each tick).
+        Integer last = GER_MOTE_TICK.get(stand.getId());
+        if (eased > 0.6F && (last == null || last != stand.tickCount)) {
+            GER_MOTE_TICK.put(stand.getId(), stand.tickCount);
+            if (GER_MOTE_TICK.size() > 64) GER_MOTE_TICK.clear();
+            var lv = stand.level();
+            var rnd = lv.random;
+            double w = stand.getBbWidth() * 0.6D, h = stand.getBbHeight();
+            for (int i = 0; i < 2; i++) {
+                boolean gold = rnd.nextBoolean();
+                var dust = new net.minecraft.core.particles.DustParticleOptions(gold ? new org.joml.Vector3f(1.0F, 0.83F, 0.27F) : new org.joml.Vector3f(0.24F, 1.0F, 0.54F), 0.8F);
+                lv.addParticle(dust, stand.getX() + (rnd.nextDouble() - 0.5D) * w * 2.0D, stand.getY() + rnd.nextDouble() * h, stand.getZ() + (rnd.nextDouble() - 0.5D) * w * 2.0D, 0.0D, 0.03D, 0.0D);
+            }
+            if (rnd.nextInt(4) == 0) lv.addParticle(net.minecraft.core.particles.ParticleTypes.END_ROD, stand.getX() + (rnd.nextDouble() - 0.5D) * w * 2.0D,
+                    stand.getY() + rnd.nextDouble() * h * 0.6D, stand.getZ() + (rnd.nextDouble() - 0.5D) * w * 2.0D, 0.0D, 0.025D, 0.0D);
+        }
+    }
+
+    /** A flat ring (annulus) in the XY plane of the current pose: radius r, band width w. Additive glow. */
+    static void ring(PoseStack ps, MultiBufferSource buffers, float r, float w, int rgb, float alpha) {
+        if (alpha <= 0.01F || r <= 0.0F) return;
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        org.joml.Matrix4f m = ps.last().pose();
+        int a = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
+        int cr = (rgb >> 16) & 0xFF, cg = (rgb >> 8) & 0xFF, cb = rgb & 0xFF;
+        float ri = Math.max(0.0F, r - w), ro = r + w * 0.4F;
+        final int seg = 32;
+        for (int i = 0; i < seg; i++) {
+            float a0 = Mth.TWO_PI * i / seg, a1 = Mth.TWO_PI * (i + 1) / seg;
+            float c0 = Mth.cos(a0), s0 = Mth.sin(a0), c1 = Mth.cos(a1), s1 = Mth.sin(a1);
+            // inner (faint) -> middle (bright) -> outer (faint): a soft-edged band, both sides
+            float rm = (ri + ro) * 0.5F;
+            for (int side = 0; side < 2; side++) {
+                float[][] q = side == 0
+                        ? new float[][]{{ri, 0}, {rm, a}}
+                        : new float[][]{{rm, a}, {ro, 0}};
+                float rA = q[0][0], rB = q[1][0];
+                int aA = (int) q[0][1], aB = (int) q[1][1];
+                vc.addVertex(m, c0 * rA, s0 * rA, 0.0F).setColor(cr, cg, cb, aA);
+                vc.addVertex(m, c1 * rA, s1 * rA, 0.0F).setColor(cr, cg, cb, aA);
+                vc.addVertex(m, c1 * rB, s1 * rB, 0.0F).setColor(cr, cg, cb, aB);
+                vc.addVertex(m, c0 * rB, s0 * rB, 0.0F).setColor(cr, cg, cb, aB);
+                vc.addVertex(m, c0 * rB, s0 * rB, 0.0F).setColor(cr, cg, cb, aB);
+                vc.addVertex(m, c1 * rB, s1 * rB, 0.0F).setColor(cr, cg, cb, aB);
+                vc.addVertex(m, c1 * rA, s1 * rA, 0.0F).setColor(cr, cg, cb, aA);
+                vc.addVertex(m, c0 * rA, s0 * rA, 0.0F).setColor(cr, cg, cb, aA);
+            }
+        }
+    }
+
+    /** A soft round glow (bright middle fading to nothing at the edge) in the XY plane of the current pose. */
+    static void disc(PoseStack ps, MultiBufferSource buffers, float r, int rgb, float alpha) {
+        if (alpha <= 0.01F || r <= 0.0F) return;
+        VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        org.joml.Matrix4f m = ps.last().pose();
+        int a = (int) (Mth.clamp(alpha, 0.0F, 1.0F) * 255.0F);
+        int cr = (rgb >> 16) & 0xFF, cg = (rgb >> 8) & 0xFF, cb = rgb & 0xFF;
+        final int seg = 24;
+        for (int i = 0; i < seg; i++) {
+            float a0 = Mth.TWO_PI * i / seg, a1 = Mth.TWO_PI * (i + 1) / seg;
+            float x0 = Mth.cos(a0) * r, y0 = Mth.sin(a0) * r, x1 = Mth.cos(a1) * r, y1 = Mth.sin(a1) * r;
+            vc.addVertex(m, 0.0F, 0.0F, 0.0F).setColor(cr, cg, cb, a);
+            vc.addVertex(m, 0.0F, 0.0F, 0.0F).setColor(cr, cg, cb, a);
+            vc.addVertex(m, x0, y0, 0.0F).setColor(cr, cg, cb, 0);
+            vc.addVertex(m, x1, y1, 0.0F).setColor(cr, cg, cb, 0);
+            vc.addVertex(m, x1, y1, 0.0F).setColor(cr, cg, cb, 0);
+            vc.addVertex(m, x0, y0, 0.0F).setColor(cr, cg, cb, 0);
+            vc.addVertex(m, 0.0F, 0.0F, 0.0F).setColor(cr, cg, cb, a);
+            vc.addVertex(m, 0.0F, 0.0F, 0.0F).setColor(cr, cg, cb, a);
+        }
+    }
+
     private static final ResourceLocation REQUIEM_AURA = ResourceLocation.fromNamespaceAndPath("mobstands", "textures/misc/requiem_aura.png");
     private static final int AURA_FRAMES = 16;
 
@@ -759,6 +1175,249 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         armGlow(ps, buffers, arm, 0.7F * (1.0F - k) * (1.0F - k), 1.2F + k * 0.9F, rgb);
         armGlow(ps, buffers, arm, 0.35F * (1.0F - k), 1.1F + k * 0.4F, 0xFFFFFF);
         ps.popPose();
+    }
+
+    // ---- Regular punch ----
+
+    /**
+     * One punch, {@code dt} ticks from the moment it lands: the main ghost fist rockets out of the shoulder with
+     * motion-blur afterimages, two smaller fists chase it in, it lands with a pop and a flash of light, and a ring
+     * of aura blows outward.
+     */
+    private static void drawPunch(PoseStack ps, MultiBufferSource buffers, StandVisual vis, float dt, float side,
+                                  int armSide, int seed, int light, int aura) {
+        if (dt < -3.0F || dt > 7.0F) return;
+        StandVisual.ArmPiece arm = vis.arm(armSide == 1);
+        float tx = side * 0.25F, ty = 0.34F, tz = -2.45F;
+        // Two smaller fists fired just ahead of the main one, converging on the same spot (the MUDA flavour).
+        for (int j = 0; j < 2; j++) {
+            float s = -3.0F + j * 1.4F;
+            float u = (dt - s) / 5.0F;
+            if (u <= 0.0F || u >= 1.0F) continue;
+            float e = Mth.sin(u * Mth.PI);
+            float fade = u < 0.5F ? 1.0F : 1.0F - (u - 0.5F) * 2.0F;
+            float ox = side + (j == 0 ? -0.18F : 0.18F), oy = 0.3F + (j == 0 ? 0.12F : -0.1F);
+            float px = tx + (j == 0 ? -0.22F : 0.2F) + (rand(seed + j, 4) - 0.5F) * 0.15F;
+            float py = ty + (j == 0 ? 0.18F : -0.14F);
+            ps.pushPose();
+            punchPose(ps, ox, oy, -0.2F, px, py, tz + 0.25F, e, (seed + j) * 53.0F + e * 40.0F, (0.7F + 0.3F * e) * (float) Math.sqrt(fade));
+            StandVisual.ArmPiece a2 = vis.arm((j == 1) != (armSide == 1));
+            if (fade > 0.3F) drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), a2, light, 0xFFFFFFFF, 1.0F);
+            armGlow(ps, buffers, a2, 0.32F * fade, 1.18F, aura);
+            ps.popPose();
+        }
+        // The main fist: driven out smoothly over the 3 ticks before impact (like the arm), then eases back and fades.
+        float e, pop = 0.0F, fade = 1.0F;
+        if (dt < -3.0F) e = 0.0F;
+        else if (dt < 0.0F) {
+            float x = (dt + 3.0F) / 3.0F;
+            e = x * x * (3.0F - 2.0F * x);
+        } else {
+            pop = Mth.sin(Mth.clamp(dt / 2.5F, 0.0F, 1.0F) * Mth.PI); // swells a little on impact
+            float k = Mth.clamp((dt - 1.0F) / 5.0F, 0.0F, 1.0F);
+            k = k * k * (3.0F - 2.0F * k);
+            e = 1.0F - 0.5F * k;
+            fade = 1.0F - k;
+        }
+        if (dt >= -3.0F && fade > 0.0F) {
+            // Afterimages trailing it while it flies.
+            if (dt > -2.5F && dt < 1.0F) {
+                float trail = dt < 0.0F ? 1.0F : 1.0F - dt;
+                for (int g = 3; g >= 1; g--) {
+                    float x = Mth.clamp((dt - g * 0.35F + 3.0F) / 3.0F, 0.0F, 1.0F);
+                    if (x <= 0.0F) continue;
+                    float eg = x * x * (3.0F - 2.0F * x);
+                    ps.pushPose();
+                    punchPose(ps, side, 0.36F, -0.2F, tx, ty, tz, eg, seed * 31.0F + eg * 25.0F, 1.2F);
+                    ps.scale(1.0F, 1.0F, 1.3F);
+                    armGlow(ps, buffers, arm, (0.3F / g) * trail, 1.12F, aura);
+                    ps.popPose();
+                }
+            }
+            ps.pushPose();
+            punchPose(ps, side, 0.36F, -0.2F, tx, ty, tz, e, seed * 31.0F + e * 25.0F, (1.2F + 0.15F * pop) * (float) Math.sqrt(fade));
+            if (fade > 0.3F) drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), arm, light, 0xFFFFFFFF, 1.0F);
+            armGlow(ps, buffers, arm, (0.4F + 0.25F * pop) * fade, 1.16F + 0.08F * pop, aura);
+            armGlow(ps, buffers, arm, 0.18F * fade, 1.55F, aura);
+            ps.popPose();
+        }
+        // Impact: a white-hot flash at the knuckles, then a wide ring of aura blowing outward.
+        if (dt >= 0.0F && dt < 5.0F) {
+            float k = dt / 5.0F;
+            ps.pushPose();
+            punchPose(ps, side, 0.36F, -0.2F, tx, ty, tz, 1.0F, seed * 31.0F, 1.2F);
+            armGlow(ps, buffers, arm, 0.75F * (1.0F - k) * (1.0F - k), 1.25F + k * 0.8F, 0xFFFFFF);
+            armGlow(ps, buffers, arm, 0.45F * (1.0F - k), 1.6F + k * 2.2F, aura);
+            ps.popPose();
+        }
+        impactBurst(ps, buffers, arm, dt * 1.2F, tx, 2.15F, 1.9F, aura);
+    }
+
+    /**
+     * GER's punches land with rings of light - a golden ring and a thin white one chasing it, blasting outward
+     * round the fist, flat to the punch, like the blow is being returned to zero - and an emerald ring behind.
+     */
+    private static void zeroRings(PoseStack ps, MultiBufferSource buffers, float dt, float x) {
+        if (dt < 0.0F || dt > 10.0F) return;
+        ps.pushPose();
+        ps.translate(x, 0.34F, -2.45F);
+        for (int i = 0; i < 3; i++) {
+            float d = dt - i * 1.3F;
+            if (d < 0.0F) continue;
+            float k = Mth.clamp(d / 8.0F, 0.0F, 1.0F);
+            float e = 1.0F - (1.0F - k) * (1.0F - k) * (1.0F - k);
+            float fade = (1.0F - k) * (1.0F - k);
+            int rgb = i == 0 ? 0xF2C744 : i == 1 ? 0xFFFFFF : 0x3CFF8A;
+            ring(ps, buffers, 0.15F + e * (1.6F - i * 0.25F), 0.16F * (1.0F - k) + 0.03F, rgb, (i == 1 ? 0.6F : 0.85F) * fade);
+        }
+        // a hot flash at the centre for a moment
+        disc(ps, buffers, 0.5F + dt * 0.08F, 0xFFF4C0, 0.7F * Math.max(0.0F, 1.0F - dt / 3.0F));
+        ps.popPose();
+    }
+
+    /** Places a punch fist on its flight from (ox,oy,oz) to (tx,ty,tz), aimed along its path. */
+    private static void punchPose(PoseStack ps, float ox, float oy, float oz, float tx, float ty, float tz, float e, float spin, float scale) {
+        float dx = tx - ox, dy = ty - oy, dz = tz - oz;
+        ps.translate(Mth.lerp(e, ox, tx), Mth.lerp(e, oy, ty), Mth.lerp(e, oz, tz));
+        ps.mulPose(Axis.YP.rotation((float) -Math.atan2(dx, -dz)));
+        ps.mulPose(Axis.XP.rotation((float) Math.atan2(dy, -dz)));
+        ps.mulPose(Axis.ZP.rotationDegrees(spin));
+        ps.scale(scale, scale, scale);
+    }
+
+    // ---- Barrage ----
+
+    /** A new fist flies out this often (ticks), alternating sides; each one lives this long. */
+    private static final float BARRAGE_GAP = 0.6F, BARRAGE_LIFE = 5.0F;
+    /** Fraction of a fist's life spent flying out (the rest it's snapping back and fading). */
+    private static final float BARRAGE_OUT = 0.5F;
+
+    private static float rand(int n, int salt) {
+        return Mth.frac(Mth.sin(n * 12.9898F + salt * 78.233F) * 43758.547F);
+    }
+
+    /** One flurry fist: where it's thrown from and to, how far out it is, and how it's turned. */
+    private static void barrageFist(PoseStack ps, int n, float e, float scale) {
+        float side = n % 2 == 0 ? -1.0F : 1.0F;
+        // Thrown from all round the shoulders, landing all over a wide area in front (not all in one spot).
+        float ox = side * (0.28F + rand(n, 5) * 0.3F), oy = 0.38F + (rand(n, 6) - 0.5F) * 0.35F, oz = -0.15F;
+        float tx = side * 0.2F + (rand(n, 1) - 0.5F) * 1.6F;
+        float ty = 0.35F + (rand(n, 2) - 0.5F) * 1.25F;
+        float tz = -(1.8F + rand(n, 3) * 1.0F);
+        float dx = tx - ox, dy = ty - oy, dz = tz - oz;
+        ps.translate(Mth.lerp(e, ox, tx), Mth.lerp(e, oy, ty), Mth.lerp(e, oz, tz));
+        // Aimed along its own path, so the fists converge on the target like real punches.
+        ps.mulPose(Axis.YP.rotation((float) -Math.atan2(dx, -dz)));
+        ps.mulPose(Axis.XP.rotation((float) Math.atan2(dy, -dz)));
+        ps.mulPose(Axis.ZP.rotationDegrees(n * 47.0F + e * 35.0F));
+        float sc = (0.8F + e * 0.45F) * scale;
+        ps.scale(sc, sc, sc);
+    }
+
+    /** How far out a flurry fist is (0..1) at life fraction u: a smooth arc out and back, like the original fists. */
+    private static float barrageReach(float u) {
+        return Mth.sin(Mth.clamp(u, 0.0F, 1.0F) * Mth.PI);
+    }
+
+    /**
+     * The Barrage: a storm of fists converging on the spot in front of the Stand, each trailing motion-blur
+     * afterimages and flashing where it lands; then a beat of build-up and one huge finishing fist with a
+     * shockwave of light.
+     */
+    private static void drawBarrage(PoseStack ps, MultiBufferSource buffers, StandVisual vis, float el, int light, int aura) {
+        float fin = com.mobstands.stand.StandAbilities.BARRAGE_TICKS - 1;
+        float flurryEnd = fin - 5.0F;
+        int first = Math.max(0, (int) ((el - BARRAGE_LIFE - 3.0F) / BARRAGE_GAP));
+        int last = (int) ((Math.min(el, flurryEnd) - 1.0F) / BARRAGE_GAP);
+        for (int n = first; n <= last; n++) {
+            float start = 1.0F + n * BARRAGE_GAP;
+            StandVisual.ArmPiece arm = vis.arm(n % 2 == 1);
+            // Afterimages: fading glow copies a moment behind, stretched along the punch.
+            for (int g = 2; g >= 1; g--) {
+                float u = (el - start - g * 0.28F) / BARRAGE_LIFE;
+                if (u <= 0.0F || u >= BARRAGE_OUT + 0.15F) continue; // only while it's flying out
+                float e = barrageReach(u);
+                ps.pushPose();
+                barrageFist(ps, n, e, 1.0F);
+                ps.scale(1.0F, 1.0F, 1.35F);
+                armGlow(ps, buffers, arm, (0.3F / g) * (1.0F - u), 1.12F, aura);
+                ps.popPose();
+            }
+            // The fist itself.
+            float u = (el - start) / BARRAGE_LIFE;
+            if (u > 0.0F && u < 1.0F) {
+                float e = barrageReach(u);
+                float fade = u < BARRAGE_OUT ? 1.0F : 1.0F - (u - BARRAGE_OUT) / (1.0F - BARRAGE_OUT);
+                ps.pushPose();
+                barrageFist(ps, n, e, (float) Math.sqrt(fade));
+                if (fade > 0.25F) {
+                    // Fetch the buffer right before drawing: drawing a glow in between switches buffers and closes the old one.
+                    drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), arm, light, 0xFFFFFFFF, 1.0F);
+                }
+                armGlow(ps, buffers, arm, 0.38F * fade, 1.16F, aura);
+                armGlow(ps, buffers, arm, 0.16F * fade, 1.5F, aura);
+                ps.popPose();
+            }
+            // Impact flash where it lands.
+            float dt = el - (start + BARRAGE_OUT * BARRAGE_LIFE);
+            if (dt >= 0.0F && dt < 3.0F) {
+                float k = dt / 3.0F;
+                ps.pushPose();
+                barrageFist(ps, n, 1.0F, 1.0F);
+                armGlow(ps, buffers, arm, 0.55F * (1.0F - k) * (1.0F - k), 1.3F + k * 1.1F, 0xFFFFFF);
+                armGlow(ps, buffers, arm, 0.35F * (1.0F - k), 1.7F + k * 1.6F, aura);
+                ps.popPose();
+            }
+        }
+
+        // The finisher: the right fist charges up, then one huge punch.
+        StandVisual.ArmPiece big = vis.arm(false);
+        if (el >= flurryEnd) {
+            float x = -0.3F, y = 0.36F;
+            if (el < fin) {
+                // Charging: a fist of light gathering at the shoulder, pulsing faster and brighter.
+                float u = (el - flurryEnd) / (fin - flurryEnd);
+                float throb = 0.75F + 0.25F * Mth.sin(el * (6.0F + 10.0F * u));
+                ps.pushPose();
+                ps.translate(x, y, 0.15F * u);
+                float sc = 1.0F + 0.5F * u;
+                ps.scale(sc, sc, sc);
+                armGlow(ps, buffers, big, 0.25F + 0.45F * u * throb, 1.2F + 0.4F * u * throb, aura);
+                armGlow(ps, buffers, big, 0.3F * u * u, 1.05F, 0xFFFFFF);
+                ps.popPose();
+            } else {
+                float after = el - fin;
+                float hit = Mth.clamp(after / 1.5F, 0.0F, 1.0F);
+                float e = hit * hit * (3.0F - 2.0F * hit);
+                float fade = Mth.clamp(1.0F - (after - 2.0F) / 4.0F, 0.0F, 1.0F);
+                if (fade > 0.0F) {
+                    // Afterimages of the big punch.
+                    for (int g = 3; g >= 1; g--) {
+                        float eg = Mth.clamp((after - g * 0.3F) / 1.5F, 0.0F, 1.0F);
+                        if (eg <= 0.0F || after > 2.2F) continue;
+                        eg = eg * eg * (3.0F - 2.0F * eg);
+                        ps.pushPose();
+                        ps.translate(x * (1.0F - eg), y, 0.15F - eg * 2.75F);
+                        ps.scale(1.8F, 1.8F, 1.8F * 1.4F);
+                        armGlow(ps, buffers, big, 0.35F / g, 1.15F, aura);
+                        ps.popPose();
+                    }
+                    ps.pushPose();
+                    ps.translate(x * (1.0F - e), y, 0.15F - e * 2.75F);
+                    float sc = 1.8F * (float) Math.sqrt(fade);
+                    ps.scale(sc, sc, sc);
+                    if (fade > 0.3F) drawArm(ps, buffers.getBuffer(RenderType.entityCutoutNoCull(vis.texture)), big, light, 0xFFFFFFFF, 1.0F);
+                    armGlow(ps, buffers, big, 0.5F * fade, 1.18F, aura);
+                    armGlow(ps, buffers, big, 0.25F * fade, 1.6F, aura);
+                    ps.popPose();
+                }
+                // The shockwave of light where it lands: a white flash, then a big ring of aura blowing outward.
+                if (after >= 1.2F) {
+                    impactBurst(ps, buffers, big, (after - 1.2F) * 1.2F, 0.0F, 2.6F, 2.6F, aura);
+                    impactBurst(ps, buffers, big, (after - 1.2F) * 0.8F, 0.0F, 2.6F, 4.2F, aura);
+                }
+            }
+        }
     }
 
     /** Horse Stand: just the horse's head, sitting on top of the player's head and turning with it. */
