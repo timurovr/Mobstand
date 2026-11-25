@@ -66,6 +66,7 @@ public class StandRenderer extends EntityRenderer<StandEntity> {
         if (type == null || stand.isHidden() ) return;
         if (type == StandType.SLIME && stand.disguise() >= 0 && stand.getOwnerPlayer() != Minecraft.getInstance().player) return; // (in disguise)
         if (type == StandType.ILLUSIONER && stand.isVanished() && stand.getOwnerPlayer() != Minecraft.getInstance().player) return; // (vanished)
+        if (type == StandType.SCARY_MONSTERS) return; // (it's drawn as its user's own body: RavagerForm)
         if (type == StandType.SILVERFISH) {
             SilverSwarm.render(stand, partial, ps, buffers);
             return;

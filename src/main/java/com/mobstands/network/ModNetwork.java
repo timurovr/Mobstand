@@ -28,6 +28,7 @@ public final class ModNetwork {
         registrar.playToClient(RespawnNowPayload.TYPE, RespawnNowPayload.CODEC, RespawnNowPayload::handle);
         registrar.playToClient(RewoundPayload.TYPE, RewoundPayload.CODEC, RewoundPayload::handle);
         registrar.playToClient(GooPayload.TYPE, GooPayload.CODEC, GooPayload::handle);
+        registrar.playToClient(DinoPayload.TYPE, DinoPayload.CODEC, DinoPayload::handle);
         registrar.playToClient(RopePayload.TYPE, RopePayload.CODEC, RopePayload::handle);
         registrar.playToClient(VineLeadPayload.TYPE, VineLeadPayload.CODEC, VineLeadPayload::handle);
         registrar.playToServer(RpsPickPayload.TYPE, RpsPickPayload.CODEC, RpsPickPayload::handle);

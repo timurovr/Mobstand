@@ -234,6 +234,7 @@ public final class StandManager {
                     case ALLAY -> voice(level, s, SoundEvents.ALLAY_HURT, 1.2F, 1.0F);
                     case PIGLIN -> voice(level, s, SoundEvents.PIGLIN_ANGRY, 1.4F, 1.0F);
                     case ZOMBIFIED_PIGLIN -> voice(level, s, SoundEvents.ZOMBIFIED_PIGLIN_ANGRY, 1.4F, 1.0F);
+                    case SCARY_MONSTERS -> voice(level, s, SoundEvents.RAVAGER_ROAR, 1.4F, 0.9F);
                     default -> { }
                 }
             } else {
@@ -254,6 +255,7 @@ public final class StandManager {
                     case ALLAY -> voice(level, s, SoundEvents.ALLAY_AMBIENT_WITHOUT_ITEM, 1.0F, 1.0F);
                     case PIGLIN -> voice(level, s, SoundEvents.PIGLIN_AMBIENT, 1.0F, 1.0F);
                     case ZOMBIFIED_PIGLIN -> voice(level, s, SoundEvents.ZOMBIFIED_PIGLIN_AMBIENT, 1.0F, 1.0F);
+                    case SCARY_MONSTERS -> voice(level, s, SoundEvents.RAVAGER_AMBIENT, 1.0F, 1.1F);
                 }
             }
         });

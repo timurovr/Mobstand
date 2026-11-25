@@ -73,7 +73,7 @@ public class EchoArrowItem extends Item {
         level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), SoundEvents.TRIDENT_HIT, SoundSource.PLAYERS, 0.8F, 0.7F);
         level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 1.0F, 0.6F);
         sp.sendSystemMessage(Component.literal("Your Stand awakens: " + type.standName() + " (" + type.mobName() + ", "
-                + type.kind().label() + ")").withStyle(s -> s.withColor(type.color())));
+                + type.kindLabel() + ")").withStyle(s -> s.withColor(type.color())));
     }
 
     @Override

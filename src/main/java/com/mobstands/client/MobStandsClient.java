@@ -20,6 +20,8 @@ public class MobStandsClient {
         NeoForge.EVENT_BUS.register(ZipperFx.class);
         NeoForge.EVENT_BUS.register(TimeHeld.class);
         NeoForge.EVENT_BUS.register(GooFx.class);
+        NeoForge.EVENT_BUS.register(RavagerForm.class);
+        NeoForge.EVENT_BUS.register(DinoClient.class);
         NeoForge.EVENT_BUS.register(IllusionFx.class);
         NeoForge.EVENT_BUS.register(CartRide.class);
         NeoForge.EVENT_BUS.register(GerCutscene.class);

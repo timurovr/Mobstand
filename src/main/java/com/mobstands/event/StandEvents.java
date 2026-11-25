@@ -195,6 +195,7 @@ public final class StandEvents {
         com.mobstands.stand.RewindEvoker.tick(event.getServer());
         com.mobstands.stand.Train.tick(event.getServer());
         com.mobstands.stand.Goo.tick(event.getServer());
+        com.mobstands.stand.ScaryMonsters.tick(event.getServer());
         com.mobstands.stand.Illusion.tick(event.getServer());
         com.mobstands.stand.StandTools.tick(event.getServer());
         com.mobstands.stand.HeartStop.tick(event.getServer());
@@ -293,12 +294,14 @@ public final class StandEvents {
     @SubscribeEvent
     public static void onStartTracking(PlayerEvent.StartTracking event) {
         if (event.getEntity() instanceof ServerPlayer viewer) com.mobstands.stand.GravityFlip.onStartTracking(viewer, event.getTarget());
+        if (event.getEntity() instanceof ServerPlayer dv) com.mobstands.stand.ScaryMonsters.onStartTracking(dv, event.getTarget());
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         TickScheduler.clear();
         com.mobstands.stand.Curses.shutdown();
+        com.mobstands.stand.ScaryMonsters.shutdown();
         com.mobstands.stand.Encounters.shutdown();
         com.mobstands.stand.TimeEvoker.shutdown();
         com.mobstands.stand.RewindEvoker.shutdown();
@@ -350,6 +353,8 @@ public final class StandEvents {
         if (!victim.level().isClientSide) com.mobstands.stand.DreamWalk.onDeath(victim, event.getSource().getEntity());
         com.mobstands.stand.Mandom.onDeath(victim);
         com.mobstands.stand.Lazarus.onDeath(victim);
+        // Scary Monsters: killed before it finished turning - it gets back up and keeps turning.
+        if (!event.isCanceled() && !victim.level().isClientSide) com.mobstands.stand.ScaryMonsters.onDeath(victim);
         if (!victim.level().isClientSide) com.mobstands.stand.GravityFlip.onDeath(victim);
         if (!victim.level().isClientSide) com.mobstands.stand.Calamity.onDeath(victim);
         com.mobstands.stand.RequiemTrials.onDeath(victim);
@@ -381,6 +386,11 @@ public final class StandEvents {
 
     @SubscribeEvent
     public static void onFall(LivingFallEvent event) {
+        // Scary Monsters: a dinosaur lands on its feet.
+        if (com.mobstands.stand.ScaryMonsters.noFall(event.getEntity())) {
+            event.setDamageMultiplier(0.0F);
+            return;
+        }
         // Iron Launch: you come down like a mace - no fall damage, and a smash where you land.
         if (event.getEntity() instanceof ServerPlayer gp && com.mobstands.stand.GolemLaunch.onLand(gp, event.getDistance())) {
             event.setDamageMultiplier(0.0F);
@@ -412,6 +422,8 @@ public final class StandEvents {
             event.setCanceled(true);
             return;
         }
+        // Scary Monsters' Living Wall: the nearest dinosaur takes most of it.
+        if (event.getEntity() instanceof ServerPlayer wp) event.setAmount(com.mobstands.stand.ScaryMonsters.wall(wp, event.getSource(), event.getAmount()));
         // Nothing one-taps a player: big Stand hits on players are capped.
         event.setAmount(com.mobstands.stand.StandCombat.pvpCap(event.getEntity(), event.getSource(), event.getAmount()));
         // Weaver of Webs' Möbius Strip: closes when you're badly hurt, and sends most of every hit back round the loop.
@@ -521,6 +533,8 @@ public final class StandEvents {
     @SubscribeEvent
     public static void onPlayerDamaged(LivingDamageEvent.Post event) {
         if (!event.getEntity().level().isClientSide) StandManager.misfireHurt(event.getEntity(), event.getSource());
+        // Scary Monsters: whatever its user hurts starts turning into a dinosaur.
+        if (event.getNewDamage() > 0.0F) com.mobstands.stand.ScaryMonsters.onHurt(event.getEntity(), event.getSource());
         if (event.getEntity() instanceof ServerPlayer p && event.getNewDamage() > 0.0F) {
             StandManager.onOwnerHurt(p);
             com.mobstands.stand.Curses.onHurt(p, event.getSource());
@@ -638,6 +652,7 @@ public final class StandEvents {
         if (!event.getLevel().isClientSide()) {
             com.mobstands.stand.TimeEvoker.onJoin(event.getEntity());
             com.mobstands.stand.RewindEvoker.onJoin(event.getEntity());
+            com.mobstands.stand.ScaryMonsters.onJoin(event.getEntity());
         }
         if (!event.getLevel().isClientSide() && !event.loadedFromDisk() && com.mobstands.stand.SoundSteal.fizzles(event.getEntity())) {
             event.setCanceled(true); // a silenced mob's shot fizzles out

@@ -171,6 +171,15 @@ public enum StandType {
             new Passive(5, "Last Illusion", "About to die (under 30% health): you vanish for 3 seconds and everything chasing you "
                     + "loses you. Once a minute.")),
 
+    // Scary Monsters, Ravager-style: Diego Brando's dinosaur. It infects what you hit and turns it into a herd of its own.
+    SCARY_MONSTERS("scary_monsters", "Scary Monsters", "Ravager", 0xC8A15A, EntityType.RAVAGER,
+            ParticleTypes.SPORE_BLOSSOM_AIR, 0.08, 0.0, 0.6, null,
+            StandAbilities.scaryMonsters(),
+            new Passive(1, "Primal Infection", "Summoning it turns you into a Ravager: Regeneration II, Speed II, a high jump, "
+                    + "no fall damage, and you sidestep Steel Balls thrown at you. Whatever you hurt starts turning into a "
+                    + "dinosaur and joins your herd - even if you kill it, it gets back up and keeps turning. Dinosaurs, and you, "
+                    + "only see what moves.")),
+
     // C-Moon: a little Shulker riding your shoulder, gravity turned inside out around it.
     SHULKER("shulker", "Crescent Shell", "Shulker", 0xB38BC9, EntityType.SHULKER,
             ParticleTypes.END_ROD, 0.10, 0.0, 0.35, null,
@@ -254,9 +263,19 @@ public enum StandType {
             case DOLPHIN, WARDEN_REQUIEM, CREEPER_REQUIEM, PIGLIN_REQUIEM, AXOLOTL, SHULKER -> StandClass.RANGE_IRRELEVANT;
             case PIG, SNIFFER -> StandClass.SUPPORT;
             case LLAMA, GUARDIAN -> StandClass.EQUIPMENT;
-            case SLIME, SILVERFISH -> StandClass.COLONY;
+            case SLIME, SILVERFISH, SCARY_MONSTERS -> StandClass.COLONY;
             case HORSE, MINECART -> StandClass.MOUNT;
         };
+    }
+
+    /** A second type for Stands that are two things at once (null for most). */
+    public StandClass kind2() {
+        return this == SCARY_MONSTERS ? StandClass.CLOSE_RANGE : null;
+    }
+
+    /** "Colony" or "Colony / Close-Range Power". */
+    public String kindLabel() {
+        return kind2() == null ? kind().label() : kind().label() + " / " + kind2().label();
     }
     public int color() { return color; }
     /** The vanilla mob this Stand is modelled on (used only client-side for the model). */
@@ -319,7 +338,8 @@ public enum StandType {
 
     /** Intimidating Stands get the menacing blade sound when they appear. */
     public boolean menacing() {
-        return this == WARDEN || this == WARDEN_REQUIEM || this == ENDERMAN || this == ENDER_WORLD || this == IRON_GOLEM || this == GER || this == AXOLOTL;
+        return this == WARDEN || this == WARDEN_REQUIEM || this == ENDERMAN || this == ENDER_WORLD || this == IRON_GOLEM || this == GER || this == AXOLOTL
+                || this == SCARY_MONSTERS;
     }
 
     /** Requiem Stands: already complete. No levels - every ability is there from the start, at full strength. */
@@ -371,6 +391,10 @@ public enum StandType {
                     + "string half a turn and join the ends, and you get a loop with only one side. The Möbius Strip. It happens by "
                     + "itself when you're badly hurt: for 20 seconds nothing can turn you around (gravity flips slide off, nothing "
                     + "knocks you back), and most of every hit runs round the loop and comes back out into whoever threw it.";
+            case SCARY_MONSTERS -> "A Ravager is the closest thing this world has left to a dinosaur: all jaw, all charge. "
+                    + "Scary Monsters is one, and it doesn't stay alone for long. Whatever you hurt starts turning: it keeps its "
+                    + "size, but underneath it's a dinosaur now, and it runs with your herd. Dinosaurs only see what moves - "
+                    + "stand still, and you're invisible to them. When you take the form yourself, so are they to you.";
             default -> "";
         };
     }
