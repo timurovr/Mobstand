@@ -18,6 +18,8 @@ import java.util.Optional;
  * Punching your duplicate Allays: they're drawn by the Stand, so the client works out which one your swing hit
  * (ray against where it was drawn), flashes it red, knocks it back, and tells the server.
  */
+
+//timur gay
 public final class AllayDupeHits {
     private AllayDupeHits() {}
 
