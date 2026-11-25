@@ -54,6 +54,7 @@ public final class StandHud {
             case PIGLIN -> new Palette(0xF2C94C, 0x3A2410);     // piglin gold
             case ZOMBIFIED_PIGLIN -> new Palette(0x8DBE6A, 0x2A1E1E); // rotten green
             case SHULKER -> new Palette(0xB38BC9, 0x24162E); // shulker purple
+            case SCARY_MONSTERS -> new Palette(0xC8A15A, 0x2A1E12); // fossil amber on dark ravager hide
             case SILVERFISH -> new Palette(0xE8B84A, 0x1C1426); // zipper gold on pocket-dimension purple
             case ILLUSIONER -> new Palette(0x8FB4F0, 0x1E2A4A); // illusioner blue
             case LLAMA -> new Palette(0xD9B48A, 0x3A2A1A);      // rope brown
@@ -187,6 +188,18 @@ public final class StandHud {
                 int by = top + 11 + i * 6;
                 g.fill(x, by, x + w, by + 3, argb((int) (255 * v), mix(base, 0x000000, 0.4F)));
                 g.fill(x, by, x + (int) (w * frac), by + 3, argb((int) (255 * v), refilling ? 0x7FD4FF : accent));
+            }
+        }
+        // Scary Monsters: your herd (the dinosaurs around you) and how many are still turning.
+        if (t == StandType.SCARY_MONSTERS) {
+            int[] herd = DinoClient.herdCount(mc.player.getUUID());
+            if (herd[0] > 0 || herd[1] > 0) {
+                String line = "Herd " + herd[0] + "/" + com.mobstands.stand.ScaryMonsters.herdCap(d.getLevel())
+                        + (herd[1] > 0 ? "  (" + herd[1] + " turning)" : "");
+                int top = y - 8 - 11;
+                g.fill(x - 4, top - 3, x + w + 4, y - 6, argb((int) (110 * v), accent));
+                g.fill(x - 3, top - 2, x + w + 3, y - 7, argb((int) (205 * v), base));
+                g.drawString(mc.font, line, x, top, argb((int) (255 * v), accent), true);
             }
         }
         // Pigstep: the stolen sounds, as spawn eggs above the panel (the ready one is framed).

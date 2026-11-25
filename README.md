@@ -75,7 +75,7 @@ Requiems at x1.75.
 | Range Irrelevant | Bends the rules: time, weather, gravity, fate |
 | Support | Finds, tracks, helps |
 | Equipment | Becomes a tool in your hands |
-| Colony | Many small pieces (a swarm, a goo) |
+| Colony | Many small pieces (a swarm, a goo, a herd) |
 | Mount | You ride it |
 
 ## The Stands
@@ -83,6 +83,7 @@ Requiems at x1.75.
 |---|---|---|---|
 | Green Temperance | Slime | Colony | Devour Touch, Temperance Armor, Masquerade, Devour. Passive: you bounce off landings like a slime block |
 | Silver Fingers | Silverfish | Colony | Swarm Bite, Zipper Punch, Zip Away, Zip Through |
+| **Scary Monsters** | Ravager | Colony / Close-Range Power | You turn into the Ravager: Raptor Bite, Stampede, Living Wall, Call the Herd. Passive: **Primal Infection** |
 | Rattling Marksman | Skeleton | Long-Range | Bone Arrow, Rapid Fire, Piercing Shot, Arrow Storm, **Bone Cage** |
 | Weaver of Webs | Spider | Close-Range Power | Fang Strike, Web Shot, Spider Climb, Web Cocoon, **Silk Swing**. **Möbius Strip** (see below) |
 | Green Detonator | Creeper | Close-Range Power | No punch, it only explodes: Hissing Burst, Kamikaze Rush, Big Bang, **Sheer Heart Attack** |
@@ -153,6 +154,14 @@ happens on its own whenever you're badly hurt (at most once every 2 minutes and 
   zips you through walls, floors and ceilings up to 12 blocks thick.
 * **Green Temperance (Slime)**: Devour Touch and Devour eat creatures whole, Temperance Armor soaks up hits with green
   goo, Masquerade disguises you as a mob.
+* **Scary Monsters (Ravager)**: Diego Brando's dinosaur. It doesn't stand behind you - summoning it turns *you* into a
+  Ravager (third person while you're turned): Regeneration II, Speed II, a high jump, no fall damage, and you sidestep
+  Steel Balls thrown at you. Whatever you hurt starts turning into a dinosaur the size it already was (faster at
+  higher levels) and joins your herd - kill it first and it gets back up where it fell and keeps turning. Only you
+  infect; the herd doesn't. Dinosaurs only see what moves: the herd hunts monsters and whatever fights you, and loses
+  anything that stands still - and while you're turned, still creatures vanish from your view too. Stampede (Z) sends
+  the herd at what you're looking at, Living Wall (X) rings you with them and the nearest takes 70% of each hit,
+  Call the Herd (C) brings them all back with a roar. Up to 5 dinosaurs, 14 at level 10.
 * **Smoke and Mirrors (Illusioner)**: Mirror Images puts four copies of you around you that can take hits for you,
   Vanish makes you disappear completely for 10 seconds, and Mirror Maze leaves everything within 14 blocks blind and
   seeing you everywhere.

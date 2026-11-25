@@ -292,6 +292,11 @@ final class StandVisual {
                 main = new net.minecraft.client.model.SilverfishModel<>(root);
                 texture = tex("textures/entity/silverfish.png");
             }
+            case SCARY_MONSTERS -> {
+                root = ctx.bakeLayer(ModelLayers.RAVAGER);
+                main = new net.minecraft.client.model.RavagerModel(root);
+                texture = tex("textures/entity/illager/ravager.png");
+            }
             default -> throw new IllegalStateException("No model for " + type);
         }
         this.outer = outerModel;
@@ -666,6 +671,7 @@ final class StandVisual {
             case SQUID -> { lean = 0; tilt = 0; turn = 0; }         // hangs perfectly straight above you
             case PIG -> { lean = 0; tilt = 0; turn = 0; }           // just a pig
             case ALLAY -> { lean = 0; tilt = 0; turn = 0; }         // just an allay
+            case SCARY_MONSTERS -> { lean = 0; tilt = 0; turn = 0; } // on all fours, beside you
             default -> { lean = 7; tilt = 4; turn = 0; }
         }
     }

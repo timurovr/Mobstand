@@ -18,6 +18,7 @@ public final class StandCombat {
         if (!(e instanceof LivingEntity le)) return false;
         if (e == owner || !le.isAlive() || le.isSpectator() || le.isInvulnerable()) return false;
         if (e instanceof ArmorStand) return false; // (villagers and traders are fair game now)
+        if (ScaryMonsters.inHerdOf(owner, e)) return false; // your own dinosaurs
         if (e instanceof OwnableEntity oe && owner.getUUID().equals(oe.getOwnerUUID())) return false;
         if (e instanceof Player p && (!owner.canHarmPlayer(p) || p.isCreative())) return false;
         return true;

@@ -166,6 +166,7 @@ public final class StandAbilities {
             case PHANTOM -> c.sound(SoundEvents.PHANTOM_SWOOP, 0.7F, 1.2F);
             case SQUID -> c.sound(SoundEvents.SQUID_SQUIRT, 0.7F, 1.0F);
             case DOLPHIN -> c.sound(SoundEvents.DOLPHIN_SWIM, 0.7F, 1.2F);
+            case SCARY_MONSTERS -> c.sound(SoundEvents.RAVAGER_STEP, 0.8F, 1.2F);
             case SPIDER -> c.sound(SoundEvents.SPIDER_STEP, 0.8F, 1.0F);
             case BLAZE -> c.sound(SoundEvents.BLAZE_BURN, 0.6F, 1.2F);
             default -> { }
@@ -188,6 +189,7 @@ public final class StandAbilities {
             case PIGLIN -> c.sound(SoundEvents.PIGLIN_ANGRY, 0.6F, p);
             case ALLAY -> c.sound(SoundEvents.ALLAY_HURT, 0.6F, 1.3F);
             case ZOMBIFIED_PIGLIN -> c.sound(SoundEvents.ZOMBIFIED_PIGLIN_ANGRY, 0.6F, p);
+            case SCARY_MONSTERS -> c.sound(SoundEvents.RAVAGER_HURT, 0.6F, 1.3F);
             default -> { }
         }
     }
@@ -1223,6 +1225,20 @@ public final class StandAbilities {
                 ab("Deep Reel", "Whatever's on your hook is torn all the way to you and slammed down. The line's used up.", 4, 12, StandTools::deepReel),
                 ab("Elder Curse", "Everyone within 16 blocks is weighed down by the deep for 10 seconds: slowed, weakened, too tired to mine.", 6, 30, StandTools::curse)
         };
+    }
+
+    // ================================================================== RAVAGER: Scary Monsters (Diego Brando)
+
+    public static Ability[] scaryMonsters() {
+        return new Ability[]{
+                ab("Raptor Bite", "Your dinosaur lunges and snaps its jaws shut on what's in front of you.", 1, 0.9, c ->
+                        melee(c, 7.0D, 1.2D, 0.2D, t -> c.sound(SoundEvents.RAVAGER_ATTACK, 0.9F, 1.1F))),
+                ab("Stampede", "Every dinosaur in your herd charges the creature you're looking at, faster than they've ever "
+                        + "run. They keep after it for 10 seconds - as long as it keeps moving.", 1, 12, ScaryMonsters::stampede),
+                ab("Living Wall", "Toggle. The herd closes in around you in a ring and only goes for what comes close. "
+                        + "The nearest dinosaur takes 70% of every hit meant for you.", 3, 1.0, ScaryMonsters::livingWall),
+                ab("Call the Herd", "Every dinosaur comes back to you at once and roars, throwing back whatever is around it.",
+                        5, 20, ScaryMonsters::callHerd)};
     }
 
     public static Ability[] shulker() {

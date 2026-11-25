@@ -8,7 +8,9 @@
     "EntityBoxMixin",
     "TickRateManagerMixin",
     "TrackedEntityMixin",
-    "ServerLevelTickRateMixin"
+    "ServerLevelTickRateMixin",
+    "RavagerAccessor",
+    "MobGoalsAccessor"
   ],
   "client": [
     "WorldOpenFlowsMixin",

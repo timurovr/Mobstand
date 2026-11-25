@@ -81,7 +81,7 @@ public class StandInfoScreen extends Screen {
 
         g.drawString(font, t.standName() + (t.pigAct() > 0 ? " " + t.actLabel() : ""), x, y, 0xFF000000 | t.color(), true);
         y += 12;
-        g.drawString(font, t.mobName() + " Stand  -  " + (t.requiem() ? "Requiem, " : "") + t.kind().label(), x, y, 0xFF000000 | t.kind().color(), false);
+        g.drawString(font, t.mobName() + " Stand  -  " + (t.requiem() ? "Requiem, " : "") + t.kindLabel(), x, y, 0xFF000000 | t.kind().color(), false);
         y += 14;
         if (!t.lore().isEmpty()) {
             // The Stand's story, in italics.

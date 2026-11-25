@@ -32,6 +32,7 @@ public final class PlayerPoses {
         if (!(e instanceof Player p)) return;
         m.head.zRot = 0.0F; // vanilla never resets the head's roll, and the model is shared by every player
         if (age == 0.0F) return; // first-person hand rendering: leave the arms alone
+        if (RavagerForm.pose(m, p, age)) return; // Scary Monsters: the body convulsing into a dinosaur
         if (CartRide.riding(p) || CartRide.ridingDolphin(p)) {
             // Sitting in the Minecart Stand (or astride the Dolphin): vanilla's riding pose, hands on the rim.
             m.rightLeg.xRot = -1.4137167F;

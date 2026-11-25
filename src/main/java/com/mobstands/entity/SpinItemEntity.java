@@ -631,7 +631,8 @@ public class SpinItemEntity extends Entity {
                 // On the way home it still hits whatever is in its path - each mob once per trip back, a bit softer,
                 // and it keeps flying on through them.
                 for (LivingEntity t : tsl.getEntitiesOfClass(LivingEntity.class, getBoundingBox().expandTowards(getDeltaMovement()).inflate(0.15D),
-                        x -> x != tp && x != tp.getVehicle() && x.isAlive() && StandCombat.valid(tp, x) && !returnHits.contains(x.getUUID()))) {
+                        x -> x != tp && x != tp.getVehicle() && x.isAlive() && StandCombat.valid(tp, x) && !returnHits.contains(x.getUUID())
+                        && !com.mobstands.stand.ScaryMonsters.dodge(x, this))) {
                     returnHits.add(t.getUUID());
                     StandManager.spinThrowHit(tp, t, power() * 0.7F, isSteel());
                     tsl.playSound(null, t.getX(), t.getY(), t.getZ(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.9F, 1.4F);
@@ -648,7 +649,8 @@ public class SpinItemEntity extends Entity {
                 LivingEntity hit = null;
                 double best = Double.MAX_VALUE;
                 for (LivingEntity t : tsl.getEntitiesOfClass(LivingEntity.class, getBoundingBox().expandTowards(vel).inflate(0.05D), // a tight hitbox: you have to aim
-                        x -> x != tp && x != tp.getVehicle() && x.isAlive() && StandCombat.valid(tp, x))) {
+                        x -> x != tp && x != tp.getVehicle() && x.isAlive() && StandCombat.valid(tp, x)
+                                && !com.mobstands.stand.ScaryMonsters.dodge(x, this))) {
                     double dd = t.distanceToSqr(this);
                     if (dd < best) {
                         best = dd;

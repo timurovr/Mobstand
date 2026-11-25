@@ -246,6 +246,9 @@ public class StandEntity extends Entity {
     /** Game time a mob's Stand last came out (its fade-in starts from here). */
     private static final EntityDataAccessor<Integer> MOB_APPEAR =
             SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.INT);
+    /** Scary Monsters: game time its user started turning into a Ravager (0 = not yet). */
+    private static final EntityDataAccessor<Integer> MORPH_AT =
+            SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.INT);
     /** Minecart Stand: its user is riding it (it's drawn under them instead of floating). */
     private static final EntityDataAccessor<Boolean> CART_RIDE =
             SynchedEntityData.defineId(StandEntity.class, EntityDataSerializers.BOOLEAN);
@@ -466,6 +469,7 @@ public class StandEntity extends Entity {
         builder.define(HOP_START, -1000);
         builder.define(RAIN, 0);
         builder.define(CART_RIDE, false);
+        builder.define(MORPH_AT, 0);
         builder.define(AURA, true);
         builder.define(OWNER_DEAD, false);
         builder.define(CART_BOOST, 0);
@@ -914,6 +918,13 @@ public class StandEntity extends Entity {
      * Runs on both sides; on the client it uses the owner's own (smooth, lag-free) position.
      */
     private void followOwner(Player owner, StandType type) {
+        if (type == StandType.SCARY_MONSTERS) {
+            // Scary Monsters isn't beside you: it IS you. The Stand sits inside its user (drawn as the user's Ravager form).
+            setPos(owner.getX(), owner.getY(), owner.getZ());
+            setYRot(owner.getYRot());
+            setXRot(0.0F);
+            return;
+        }
         Vec3 home = homePosition(owner, type, tickCount, side());
         if (type.isCart() && isCartRide()) home = owner.position(); // you're sitting in it
         if (type == StandType.DOLPHIN && isCartRide()) home = owner.position().add(0.0D, DOLPHIN_RIDE_Y, 0.0D); // you're riding it
@@ -1361,6 +1372,25 @@ public class StandEntity extends Entity {
         return entityData.get(DISMISS) != 0;
     }
 
+    /** Ticks a Scary Monsters user takes to turn into a Ravager (and back). */
+    public static final int MORPH_TICKS = 32;
+
+    /** Server: mark the moment the user starts turning (once). */
+    public void startMorph() {
+        if (entityData.get(MORPH_AT) == 0) entityData.set(MORPH_AT, Math.max(1, (int) level().getGameTime()));
+    }
+
+    /**
+     * Scary Monsters: 0 = human, 1 = fully a Ravager. Rises over MORPH_TICKS after summoning, and falls back as the
+     * Stand is dismissed. Driven by game time, so someone who walks up later sees you already turned.
+     */
+    public float morph(float partial) {
+        int at = entityData.get(MORPH_AT);
+        if (at == 0) return 0.0F;
+        float in = Mth.clamp(((int) level().getGameTime() - at + partial) / (float) MORPH_TICKS, 0.0F, 1.0F);
+        return Math.min(in, 1.0F - dismissProgress(partial));
+    }
+
     /** 0 while visible, rising to 1 as the dismiss fade completes. */
     public float dismissProgress(float partial) {
         int start = entityData.get(DISMISS);
@@ -1671,6 +1701,28 @@ public class StandEntity extends Entity {
         }
     }
 
+    /** Scary Monsters: the user's body cracks and stretches into a Ravager - bones, dust, then a roar. */
+    private void morphTick(ServerPlayer sp) {
+        startMorph();
+        int t = (int) level().getGameTime() - entityData.get(MORPH_AT);
+        if (t > MORPH_TICKS || !(level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
+        double x = sp.getX(), y = sp.getY() + 1.0D, z = sp.getZ();
+        if (t == 0) { // the first spasm: a choked cry
+            sl.playSound(null, x, y, z, net.minecraft.sounds.SoundEvents.PLAYER_HURT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 0.6F);
+            sl.playSound(null, x, y, z, net.minecraft.sounds.SoundEvents.RAVAGER_STUNNED, net.minecraft.sounds.SoundSource.PLAYERS, 0.6F, 1.4F);
+        }
+        if (t % 4 == 0) {
+            sl.sendParticles(new net.minecraft.core.particles.BlockParticleOption(net.minecraft.core.particles.ParticleTypes.BLOCK,
+                    net.minecraft.world.level.block.Blocks.BONE_BLOCK.defaultBlockState()), x, y, z, 8, 0.4D, 0.6D, 0.4D, 0.1D);
+            sl.playSound(null, x, y, z, net.minecraft.sounds.SoundEvents.SKELETON_STEP, net.minecraft.sounds.SoundSource.PLAYERS,
+                    0.8F, 0.6F + t / (float) MORPH_TICKS * 0.6F); // bones cracking, rising in pitch
+        }
+        if (t == MORPH_TICKS) {
+            sl.sendParticles(net.minecraft.core.particles.ParticleTypes.POOF, x, y, z, 20, 0.6D, 0.6D, 0.6D, 0.05D);
+            sl.playSound(null, x, y, z, net.minecraft.sounds.SoundEvents.RAVAGER_ROAR, net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 1.1F);
+        }
+    }
+
     private void serverTick() {
         if (isMobStand()) {
             mobStandTick();
@@ -1681,6 +1733,7 @@ public class StandEntity extends Entity {
             discard();
             return;
         }
+        if (getStandType() == StandType.SCARY_MONSTERS && !isDismissing()) morphTick(sp);
         if (isDismissing()) {
             dismissTick(sp);
             return;
