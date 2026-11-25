@@ -6,7 +6,9 @@
   "mixins": [
     "PrimaryLevelDataMixin",
     "EntityBoxMixin",
-    "TickRateManagerMixin"
+    "TickRateManagerMixin",
+    "TrackedEntityMixin",
+    "ServerLevelTickRateMixin"
   ],
   "client": [
     "WorldOpenFlowsMixin",

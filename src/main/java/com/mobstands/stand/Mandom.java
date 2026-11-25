@@ -75,7 +75,7 @@ public final class Mandom {
     private static final Map<UUID, Recorder> RECORDERS = new HashMap<>();
 
     /** Players who died (and when, and where): if they're still on the death screen, a rewind can bring them back. */
-    private record PlayerDeath(long time, ResourceKey<Level> dim) {}
+    private record PlayerDeath(long time, ResourceKey<Level> dim, Vec3 pos) {}
     private static final Map<UUID, PlayerDeath> PLAYER_DEATHS = new HashMap<>();
 
     private static boolean records(ServerPlayer p) {
@@ -174,7 +174,7 @@ public final class Mandom {
     public static void onDeath(LivingEntity e) {
         if (e.level().isClientSide) return;
         if (e instanceof Player) {
-            PLAYER_DEATHS.put(e.getUUID(), new PlayerDeath(e.level().getGameTime(), e.level().dimension()));
+            PLAYER_DEATHS.put(e.getUUID(), new PlayerDeath(e.level().getGameTime(), e.level().dimension(), e.position()));
             return;
         }
         if (RECORDERS.isEmpty()) return;
@@ -239,7 +239,15 @@ public final class Mandom {
         StandData d = StandManager.data(p);
         d.mandomAt = sl.getGameTime();
         StandManager.sync(p);
-        sl.playSound(null, p.getX(), p.getY(), p.getZ(), com.mobstands.registry.ModSounds.MANDOM.get(), SoundSource.PLAYERS, 2.0F, 1.0F);
+        // Everyone else it's about to wind back sees it happen too (the dead ones included).
+        if (d.getType() == StandType.CREEPER_REQUIEM) {
+            for (ServerPlayer o : sl.players()) {
+                if (o != p && o.position().distanceToSqr(r.center) <= RADIUS * RADIUS)
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(o, new com.mobstands.network.RewoundPayload());
+            }
+        }
+        if (StandManager.data(p).getType() != StandType.CREEPER_REQUIEM) // Bites the Dust plays its own sound
+            sl.playSound(null, p.getX(), p.getY(), p.getZ(), com.mobstands.registry.ModSounds.MANDOM.get(), SoundSource.PLAYERS, 2.0F, 1.0F);
         TickScheduler.later(WIND_TICKS, () -> {
             WINDING.remove(p.getUUID());
             if (p.isAlive() && !p.hasDisconnected() && p.level() == sl) undo(p);
@@ -368,10 +376,14 @@ public final class Mandom {
     }
 
     /**
-     * Anyone who was within reach 6 seconds ago, died since, and is still sitting on the death screen gets pulled back:
-     * respawned on the spot (keeping everything, since the death never happened) - the rewind right after then puts
-     * them exactly where they were with the health and inventory they had. Their death drops are undone with the rest.
+     * Anyone who was within reach 6 seconds ago, died since, and is still sitting on the death screen gets pulled back.
+     * They aren't respawned from here (doing that server-side left a "ghost": alive to them, invisible and unkillable to
+     * everyone else, and dead again after a reload). Instead their own game presses Respawn, a normal respawn happens,
+     * and the moment they're back they're put where they were 6 seconds ago, with the health and items they had.
      */
+    private record Revive(ServerLevel level, EState s, Vec3 diedAt, long diedTime) {}
+    private static final Map<UUID, Revive> REVIVING = new HashMap<>();
+
     private static void reviveFallenPlayers(ServerPlayer user, Recorder r, Frame f, ServerLevel sl) {
         var list = sl.getServer().getPlayerList();
         for (Map.Entry<UUID, EState> en : f.states.entrySet()) {
@@ -381,18 +393,45 @@ public final class Mandom {
             if (dead == null || dead == user || !dead.isDeadOrDying()) continue; // already respawned: too late
             if (dead.hasDisconnected()) continue;
             PLAYER_DEATHS.remove(en.getKey());
-            EState s = en.getValue();
-            ServerPlayer back = list.respawn(dead, true, Entity.RemovalReason.KILLED);
-            if (back.level() != sl) back.teleportTo(sl, s.pos.x, s.pos.y, s.pos.z, s.yRot, s.xRot);
-            else back.connection.teleport(s.pos.x, s.pos.y, s.pos.z, s.yRot, s.xRot);
-            back.setHealth(Math.max(1.0F, s.health));
-            back.removeAllEffects();
-            sl.sendParticles(ParticleTypes.END_ROD, s.pos.x, s.pos.y + 1.0D, s.pos.z, 30, 0.4D, 0.8D, 0.4D, 0.1D);
+            REVIVING.put(en.getKey(), new Revive(sl, en.getValue(), death.pos, death.time));
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(dead, new com.mobstands.network.RespawnNowPayload());
         }
+    }
+
+    /** Respawned (the real way): if Bites the Dust just pulled them back, they're back where and how they were. */
+    public static void onRespawn(ServerPlayer p) {
+        Revive rv = REVIVING.remove(p.getUUID());
+        if (rv == null) return;
+        ServerLevel sl = rv.level();
+        EState s = rv.s();
+        if (p.level() != sl) p.teleportTo(sl, s.pos.x, s.pos.y, s.pos.z, s.yRot, s.xRot);
+        else p.connection.teleport(s.pos.x, s.pos.y, s.pos.z, s.yRot, s.xRot);
+        p.setHealth(Math.min(p.getMaxHealth(), Math.max(1.0F, s.health)));
+        p.removeAllEffects();
+        p.getFoodData().setFoodLevel(s.food);
+        p.getFoodData().setSaturation(s.sat);
+        if (s.playerInv != null) {
+            p.getInventory().load(s.playerInv);
+            if (s.enderInv != null) p.getEnderChestInventory().fromTag(s.enderInv, sl.registryAccess());
+            p.containerMenu.broadcastChanges();
+        }
+        p.setDeltaMovement(Vec3.ZERO);
+        p.resetFallDistance();
+        p.clearFire();
+        p.setAirSupply(s.air);
+        // the death never happened: the items and xp it dropped were never there
+        long age = sl.getGameTime() - rv.diedTime() + 5;
+        Vec3 at = rv.diedAt();
+        for (Entity e : sl.getEntities((Entity) null, new net.minecraft.world.phys.AABB(at, at).inflate(12.0D),
+                x -> (x instanceof ItemEntity || x instanceof net.minecraft.world.entity.ExperienceOrb) && x.tickCount <= age)) {
+            e.discard();
+        }
+        sl.sendParticles(ParticleTypes.END_ROD, s.pos.x, s.pos.y + 1.0D, s.pos.z, 30, 0.4D, 0.8D, 0.4D, 0.1D);
     }
 
     public static void clear() {
         PLAYER_DEATHS.clear();
+        REVIVING.clear();
         RECORDERS.clear();
         WINDING.clear();
     }

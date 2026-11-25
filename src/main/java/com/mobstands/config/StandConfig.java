@@ -15,7 +15,7 @@ public final class StandConfig {
                 .define("explosionsDestroyBlocks", true);
         DAMAGE_MULTIPLIER = b.comment("Global multiplier applied to all Stand damage.")
                 .defineInRange("damageMultiplier", 1.0D, 0.1D, 10.0D);
-        AUTO_ASSIST = b.comment("Stands automatically strike hostile mobs that are attacking their owner.")
+        AUTO_ASSIST = b.comment("No longer used: Stands never attack on their own (kept so old config files still load).")
                 .define("autoAssist", false);
         PANIC_SUMMON = b.comment("Hitting mobs rapidly (with anything, e.g. a pickaxe) makes your Stand appear and fight with you.")
                 .define("panicSummon", true);

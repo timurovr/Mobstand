@@ -32,8 +32,8 @@ public final class PlayerPoses {
         if (!(e instanceof Player p)) return;
         m.head.zRot = 0.0F; // vanilla never resets the head's roll, and the model is shared by every player
         if (age == 0.0F) return; // first-person hand rendering: leave the arms alone
-        if (CartRide.riding(p)) {
-            // Sitting in the Minecart Stand: vanilla's riding pose, hands on the rim.
+        if (CartRide.riding(p) || CartRide.ridingDolphin(p)) {
+            // Sitting in the Minecart Stand (or astride the Dolphin): vanilla's riding pose, hands on the rim.
             m.rightLeg.xRot = -1.4137167F;
             m.rightLeg.yRot = 0.31415927F;
             m.rightLeg.zRot = 0.07853982F;
@@ -236,6 +236,13 @@ public final class PlayerPoses {
                 arm(m.rightArm, -2.5F, -0.2F, 0.45F + br, w);
                 arm(m.leftArm, -2.5F, 0.2F, -0.45F - br, w);
                 head(m, -0.35F, 0.0F, w);
+            }
+            case PIGLIN_REQUIEM -> { // Pigstep: pointing down at your enemy like they owe you gold, other fist on the hip, wide stance, chin up
+                arm(m.rightArm, -1.15F + br, -0.3F, 0.3F, w);
+                arm(m.leftArm, -0.3F, 0.0F, -0.7F - br, w);
+                head(m, -0.22F, 0.0F, w);
+                leg(m.rightLeg, -0.05F, 0.16F, w);
+                leg(m.leftLeg, 0.08F, -0.16F, w);
             }
             case SLIME -> { // hands on hips, casual head tilt
                 arm(m.rightArm, -0.25F, 0.0F, 0.65F + br, w);

@@ -15,6 +15,11 @@ public final class ClientSetup {
         event.registerEntityRenderer(ModEntities.STAND_PROJECTILE.get(), NoopRenderer::new);
         event.registerEntityRenderer(ModEntities.SPIN_ITEM.get(), SpinItemRenderer::new);
         event.registerEntityRenderer(ModEntities.HEART_ATTACK.get(), HeartAttackRenderer::new);
+        event.registerEntityRenderer(ModEntities.NULL_BUBBLE.get(), NullBubbleRenderer::new);
+        event.registerEntityRenderer(ModEntities.NUGGET_SHOT.get(), NuggetShotRenderer::new);
+        event.registerEntityRenderer(ModEntities.ZIPPER.get(), ZipperRenderer::new);
+        event.registerEntityRenderer(ModEntities.CURSE.get(), CurseRenderer::new);
+        event.registerEntityRenderer(ModEntities.TRAIN_CAR.get(), TrainCarRenderer::new);
     }
 
     public static void registerKeys(RegisterKeyMappingsEvent event) {
@@ -37,6 +42,8 @@ public final class ClientSetup {
         event.registerAboveAll(MobStands.id("rush_fx"), RushFx::render);
         event.registerAboveAll(MobStands.id("spin_cue"), SpinInput::render);
         event.registerAboveAll(MobStands.id("stand_hud"), StandHud::render);
+        event.registerAboveAll(MobStands.id("curse_hud"), CurseHud::render);
+        event.registerAboveAll(MobStands.id("stand_tool_slot"), StandToolSlot::render);
         event.registerAboveAll(MobStands.id("pilot_heat"), PilotClient::render);
         event.registerAboveAll(MobStands.id("rain_timer"), RainClient::render);
     }

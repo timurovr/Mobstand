@@ -54,9 +54,24 @@ public final class SpinFx {
         return k * k;
     }
 
-    /** Total angle spun so far: once charged it keeps spinning at full speed the whole time (only the effects fade). */
+    /** Ticks the Spin takes to wind up to full speed (instead of jumping straight to it). */
+    private static final float SPIN_UP = 5.0F;
+
+    /** Total angle spun so far: it winds up smoothly, then keeps spinning at full speed the whole time. */
     public static float angle(float el) {
-        return (START_SPEED * el) % 360.0F;
+        float a = el < SPIN_UP ? START_SPEED * el * el / (2.0F * SPIN_UP) : START_SPEED * (el - SPIN_UP * 0.5F);
+        return a % 360.0F;
+    }
+
+    /**
+     * Like a spinning top: the spin axis leans a little and slowly circles round (strong while it's fresh,
+     * calming down as it goes) - smooth, instead of a twitchy shudder.
+     */
+    public static void wobble(PoseStack ps, float el, float k) {
+        float lean = 5.0F + 9.0F * k;
+        float p = el * 0.32F;
+        ps.mulPose(Axis.ZP.rotationDegrees(Mth.sin(p) * lean));
+        ps.mulPose(Axis.XP.rotationDegrees(Mth.cos(p) * lean));
     }
 
     /** Rotates a dropped Spin item on the floor: fast at first, winding down over its floor time. */
@@ -82,11 +97,19 @@ public final class SpinFx {
 
     /** {@code stay}: the streaks never fade (Steel Balls boosting a horse keep their wind on). */
     public static void drawRings(PoseStack ps, MultiBufferSource buffers, float el, float r, boolean stay) {
-        // Only as it starts spinning: the streaks burst out for 1.5 seconds, then fade away over 1 second.
-        float k = stay ? 0.5F : el < 30.0F ? 1.0F : 1.0F - (el - 30.0F) / 20.0F;
-        k = Math.min(k, el / 3.0F); // and snap in quickly at the start
+        // The streaks burst out as it starts, then settle down to a gentle whirl that stays the whole time.
+        float settle = Mth.clamp((el - 30.0F) / 25.0F, 0.0F, 1.0F);
+        settle = settle * settle * (3.0F - 2.0F * settle);
+        float k = stay ? 0.5F : 1.0F - 0.7F * settle;
+        k = Math.min(k, el / 4.0F); // and sweep in quickly at the start
         if (k < 0.03F) return;
         VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        // Motion blur: faint bands where the item is a blur, like a coin spinning too fast to see.
+        float blurA = 0.12F * Math.min(1.0F, el / 6.0F);
+        ring(vc, ps.last().pose(), r * 0.55F, 0.0F, 0.0F, Mth.TWO_PI, r * 0.35F, blurA * 0.7F, 255, 250, 235);
+        ring(vc, ps.last().pose(), r * 0.8F, 0.0F, 0.0F, Mth.TWO_PI, r * 0.2F, blurA, 255, 240, 200);
+        // The Golden Rotation: a golden-ratio spiral whirling round it.
+        goldenSpiral(vc, ps, el, r * 1.5F, 0.5F + 0.5F * k);
         float a = angle(el) * 1.4F;
         ps.pushPose();
         ps.mulPose(Axis.YP.rotationDegrees(a));
@@ -101,9 +124,45 @@ public final class SpinFx {
         ps.popPose();
     }
 
+    /**
+     * The Golden Rotation: a spiral that grows by the golden ratio every quarter turn, drawn as a thin glowing gold
+     * ribbon flat round the spin axis, three arms, whirling with the spin.
+     */
+    public static void goldenSpiral(VertexConsumer vc, PoseStack ps, float el, float maxR, float alpha) {
+        if (alpha <= 0.02F) return;
+        final float phi = 1.618034F, turns = 3.2F * Mth.PI;
+        final int segs = 48;
+        float spin = angle(el) * 0.75F;
+        for (int arm = 0; arm < 3; arm++) {
+            ps.pushPose();
+            ps.mulPose(Axis.YP.rotationDegrees(spin + arm * 120.0F));
+            Matrix4f m = ps.last().pose();
+            for (int s = 0; s < segs; s++) {
+                float u0 = s / (float) segs, u1 = (s + 1) / (float) segs;
+                float t0 = turns * u0, t1 = turns * u1;
+                // r = maxR * phi^((theta - thetaMax) / (pi/2))
+                float r0 = maxR * (float) Math.pow(phi, (t0 - turns) / (Mth.PI / 2.0F));
+                float r1 = maxR * (float) Math.pow(phi, (t1 - turns) / (Mth.PI / 2.0F));
+                float w0 = 0.006F + r0 * 0.06F, w1 = 0.006F + r1 * 0.06F;
+                float c0 = Mth.cos(-t0), s0 = Mth.sin(-t0), c1 = Mth.cos(-t1), s1 = Mth.sin(-t1);
+                int a0 = (int) (255 * alpha * u0 * Mth.sin(Mth.PI * Math.min(1.0F, u0 * 1.1F))), a1 = (int) (255 * alpha * u1 * Mth.sin(Mth.PI * Math.min(1.0F, u1 * 1.1F)));
+                vc.addVertex(m, c0 * (r0 - w0), 0.0F, s0 * (r0 - w0)).setColor(255, 214, 74, a0);
+                vc.addVertex(m, c0 * (r0 + w0), 0.0F, s0 * (r0 + w0)).setColor(255, 214, 74, a0);
+                vc.addVertex(m, c1 * (r1 + w1), 0.0F, s1 * (r1 + w1)).setColor(255, 214, 74, a1);
+                vc.addVertex(m, c1 * (r1 - w1), 0.0F, s1 * (r1 - w1)).setColor(255, 214, 74, a1);
+                vc.addVertex(m, c1 * (r1 - w1), 0.0F, s1 * (r1 - w1)).setColor(255, 214, 74, a1);
+                vc.addVertex(m, c1 * (r1 + w1), 0.0F, s1 * (r1 + w1)).setColor(255, 214, 74, a1);
+                vc.addVertex(m, c0 * (r0 + w0), 0.0F, s0 * (r0 + w0)).setColor(255, 214, 74, a0);
+                vc.addVertex(m, c0 * (r0 - w0), 0.0F, s0 * (r0 - w0)).setColor(255, 214, 74, a0);
+            }
+            ps.popPose();
+        }
+    }
+
     /** A soft yellow glow around a spinning item on the floor: stacked golden rings whirling around it. */
     public static void drawGlow(PoseStack ps, MultiBufferSource buffers, float el, float r, float alpha) {
         VertexConsumer vc = buffers.getBuffer(ModRenderTypes.glow());
+        goldenSpiral(vc, ps, el, r * 1.8F, Math.min(1.0F, alpha * 1.4F));
         ps.pushPose();
         ps.mulPose(Axis.YP.rotationDegrees(el * 23.0F));
         Matrix4f m = ps.last().pose();

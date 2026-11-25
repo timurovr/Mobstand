@@ -25,6 +25,8 @@ public record StandActionPayload(int action) implements CustomPacketPayload {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
             if (payload.action() == 0) {
                 StandManager.toggle(sp);
+            } else if (payload.action() == 41) {
+                com.mobstands.stand.StandTools.toggle(sp); // R with a tool Stand out: the tool in or out of your hand
             } else if (payload.action() >= 1 && payload.action() <= 4) {
                 StandManager.use(sp, payload.action() - 1);
             } else if (payload.action() == 5) {
@@ -69,7 +71,13 @@ public record StandActionPayload(int action) implements CustomPacketPayload {
             } else if (payload.action() == 21 || payload.action() == 22) {
                 StandManager.spinFumble(sp, payload.action() == 22); // missed the Spin timing: it slips out of your hand
             } else if (payload.action() == 20) {
-                StandManager.allayRelease(sp); // Allay: hold X to let go
+                StandManager.allayRelease(sp); // Allay: spam X 3 times to let go
+            } else if (payload.action() == 28) {
+                com.mobstands.stand.PigActs.switchAct(sp); // Shift + summon: next Act (Pig line)
+            } else if (payload.action() == 26) {
+                StandManager.allayDragStart(sp); // Allay: hold X on a held enemy to drag it
+            } else if (payload.action() == 27) {
+                StandManager.allayDragEnd(sp);
             } else if (payload.action() >= 200 && payload.action() <= 203) {
                 StandManager.allayDupeHit(sp, payload.action() - 200);
             } else if (payload.action() >= 100 && payload.action() <= 140) {

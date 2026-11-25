@@ -28,6 +28,8 @@ public final class LoveTrainFx {
     private static final class Ray {
         double x, z;
         float width, speed, phase, height, bright;
+        /** Where this ray meets the ground (world y) - found once, so the light always reaches the floor. */
+        double base;
     }
 
     private static final class Barrier {
@@ -70,7 +72,24 @@ public final class LoveTrainFx {
             ray.bright = 1.0F;
             b.rays.add(ray);
         }
+        // Each ray reaches all the way down to whatever's under it, even if the barrier was raised in mid-air.
+        Minecraft mc = Minecraft.getInstance();
+        for (Ray ray : b.rays) {
+            ray.base = ground(mc, b.center.x + ray.x, b.center.y, b.center.z + ray.z);
+            // Its top stays up in the sky above where it was raised.
+            ray.height += (float) (b.center.y - ray.base);
+        }
         BARRIERS.add(b);
+    }
+
+    /** The first solid ground under (x, z), searching down from just above {@code y} (up to 128 blocks). */
+    private static double ground(Minecraft mc, double x, double y, double z) {
+        if (mc.level == null) return y;
+        Vec3 from = new Vec3(x, y + 1.0D, z), to = new Vec3(x, Math.max(mc.level.getMinBuildHeight(), y - 128.0D), z);
+        net.minecraft.world.phys.BlockHitResult hit = mc.level.clip(new net.minecraft.world.level.ClipContext(from, to,
+                net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.ANY,
+                net.minecraft.world.phys.shapes.CollisionContext.empty()));
+        return hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS ? to.y : hit.getLocation().y;
     }
 
     @SubscribeEvent
@@ -90,7 +109,7 @@ public final class LoveTrainFx {
             // Sparkles where the light meets the ground.
             if (b.age % 2 == 0 && !b.rays.isEmpty()) {
                 Ray ray = b.rays.get(mc.level.random.nextInt(b.rays.size()));
-                mc.level.addParticle(net.minecraft.core.particles.ParticleTypes.WAX_ON, b.center.x + ray.x, b.center.y + 0.1D, b.center.z + ray.z,
+                mc.level.addParticle(net.minecraft.core.particles.ParticleTypes.WAX_ON, b.center.x + ray.x, ray.base + 0.1D, b.center.z + ray.z,
                         0.0D, 0.6D, 0.0D);
             }
         }
@@ -114,7 +133,7 @@ public final class LoveTrainFx {
             if (fade <= 0.01F) continue;
             for (Ray ray : b.rays) {
                 double rx = b.center.x + ray.x - cam.x, rz = b.center.z + ray.z - cam.z;
-                double ry = b.center.y - cam.y;
+                double ry = ray.base - cam.y;
                 // Turn the ray's flat strip to face the camera.
                 double len = Math.sqrt(rx * rx + rz * rz);
                 float sx = len < 1.0E-3D ? 1.0F : (float) (-rz / len), sz = len < 1.0E-3D ? 0.0F : (float) (rx / len);

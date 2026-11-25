@@ -194,6 +194,8 @@ public final class StandAbilities {
 
     /** Every Stand punch (single, follow-up, combos) hits for only a quarter of its listed power. */
     public static final double PUNCH_SCALE = 0.25D;
+    /** Punches only nudge: the big launch is saved for an enemy that eats a full Barrage. */
+    public static final double PUNCH_KNOCK_SCALE = 0.3D;
 
     private static void punchHit(AbilityContext c, LivingEntity target, double dmg, double knock, double up,
                                  Consumer<LivingEntity> onHit) {
@@ -201,7 +203,7 @@ public final class StandAbilities {
             if (!target.isAlive()) return;
             target.invulnerableTime = 0;
             c.hurt(target, c.dmg(dmg * PUNCH_SCALE));
-            c.push(target, target.position().subtract(c.owner.position()), knock, up);
+            c.push(target, target.position().subtract(c.owner.position()), knock * PUNCH_KNOCK_SCALE, up * PUNCH_KNOCK_SCALE);
             if (c.type == StandType.SHULKER) GravityFlip.onPunch(c.owner, target, c.data.getLevel());
             mobHitSound(c); // only when it actually connects
             if (onHit != null) onHit.accept(target);
@@ -218,7 +220,7 @@ public final class StandAbilities {
         for (LivingEntity e : c.enemies(center, 2.4D)) {
             e.invulnerableTime = 0;
             c.hurt(e, c.dmg(damage));
-            c.push(e, look, knock, up);
+            c.push(e, look, knock * PUNCH_KNOCK_SCALE, up * PUNCH_KNOCK_SCALE);
             if (c.type == StandType.SHULKER) GravityFlip.onPunch(c.owner, e, c.data.getLevel());
             n++;
         }
@@ -228,14 +230,27 @@ public final class StandAbilities {
     /** Tick (after the click) a regular punch connects. A second click before this makes it a double. */
     public static final int PUNCH_HIT_TICK = 4;
 
+    /**
+     * Barrage damage is fixed and light, the same for every Stand: 14 x 0.6 + 4 = about 12 in all - enough to
+     * finish a cow (10 HP), not a zombie (20 HP). It's a trap, not a killer.
+     */
+    public static final float BARRAGE_HIT_DMG = 0.6F, BARRAGE_FINISH_DMG = 4.0F;
+
     /** Ticks a Barrage lasts (the Stand stays out in front, punching, for this long). */
     public static final int BARRAGE_TICKS = 32;
+    /** Extra ticks the Barrage animation keeps playing after the finisher lands (the big fist's impact). */
+    public static final int BARRAGE_AFTER = 7;
 
     /**
      * ORA barrage: the Stand plants itself in front of you and pummels everything in a short cone,
      * a hit every 2 ticks, then finishes with one heavy blow that sends them flying.
      */
     private static boolean barrage(AbilityContext c, double perHit, double finisher) {
+        return barrage(c, perHit, finisher, null);
+    }
+
+    /** @param onHit run on every enemy each punch (and the finisher) connects with - e.g. the Blaze's rods set them alight. */
+    private static boolean barrage(AbilityContext c, double perHit, double finisher, Consumer<LivingEntity> onHit) {
         // Someone in front of you threw theirs a moment ago: the fists meet - Barrage Clash.
         if (Clash.tryStart(c)) return true;
         LivingEntity focus = c.meleeTarget(6.0D);
@@ -246,6 +261,22 @@ public final class StandAbilities {
         c.stand.lunge(aim, BARRAGE_TICKS);
         c.sound(SoundEvents.PLAYER_ATTACK_SWEEP, 1.0F, 0.6F);
         final int hits = 14;
+        // Everyone caught in the flurry, and the spot they're pinned to until it ends.
+        final java.util.Map<LivingEntity, Vec3> caught = new java.util.HashMap<>();
+        for (int t = 2; t < BARRAGE_TICKS - 1; t++) {
+            c.later(t, () -> {
+                if (Clash.inClash(c.owner)) return;
+                for (java.util.Map.Entry<LivingEntity, Vec3> en : caught.entrySet()) {
+                    LivingEntity e = en.getKey();
+                    if (!e.isAlive()) continue;
+                    Vec3 at = en.getValue();
+                    if (e instanceof net.minecraft.world.entity.Mob mob) mob.getNavigation().stop();
+                    if (e.position().distanceToSqr(at.x, e.getY(), at.z) > 0.0025D) e.teleportTo(at.x, e.getY(), at.z);
+                    e.setDeltaMovement(0.0D, Math.min(e.getDeltaMovement().y, 0.0D), 0.0D);
+                    e.hurtMarked = true;
+                }
+            });
+        }
         for (int i = 0; i < hits; i++) {
             final int hitIndex = i;
             c.later(2 + i * 2, () -> {
@@ -254,8 +285,14 @@ public final class StandAbilities {
                 boolean connected = false;
                 for (LivingEntity e : c.enemies(center, 2.6D)) {
                     e.invulnerableTime = 0;
-                    c.hurt(e, c.dmg(perHit));
-                    c.push(e, look, 0.06D, 0.02D);
+                    // No knockback during the flurry: they're caught in it. (The hit's own vanilla knockback is
+                    // cancelled too, and they're held where they stand - they can't walk out of it.)
+                    Vec3 before = e.getDeltaMovement();
+                    caught.putIfAbsent(e, e.position());
+                    c.hurt(e, BARRAGE_HIT_DMG);
+                    e.setDeltaMovement(0.0D, Math.min(before.y, 0.0D), 0.0D);
+                    e.hurtMarked = true;
+                    if (onHit != null) onHit.accept(e);
                     connected = true;
                 }
                 if (connected && hitIndex % 3 == 0) mobHitSound(c);
@@ -268,8 +305,10 @@ public final class StandAbilities {
             boolean connected = false;
             for (LivingEntity e : c.enemies(center, 2.8D)) {
                 e.invulnerableTime = 0;
-                c.hurt(e, c.dmg(finisher));
+                c.hurt(e, BARRAGE_FINISH_DMG);
+                // The barrage ends: everyone caught in it is sent flying.
                 c.push(e, look, 1.5D, 0.4D);
+                if (onHit != null) onHit.accept(e);
                 connected = true;
             }
             if (connected) mobHitSound(c);
@@ -339,39 +378,25 @@ public final class StandAbilities {
                 base[0], // (no punch)
                 ab("Primer", "Look at a mob and your Stand touches it: it's a bomb now (it fizzes with sparks). Prime as many as you "
                         + "like, then press with no new mob in sight - click - and every primed mob fizzes, then goes up in a huge, slow blast "
-                        + "that harms nothing around it and leaves not even a trace behind.", 1, 1, c -> CreeperRequiem.primer(c)),
-                base[4], // Heart Attack
-                base[3], // Big Bang
+                        + "that harms nothing around it and leaves not even a trace behind. Hold SHIFT when you click and they really "
+                        + "blow up: a true explosion that tears up the area and hurts everything around them (never you).", 1, 1, c -> CreeperRequiem.primer(c)),
+                ab("Heart Attack", "A little creeper in a little minecart rolls out. Its blasts never hurt you or break blocks - but it can be knocked back and destroyed (stop time and smash it!). "
+                        + "Two modes. SHIFT + this key - AGGRESSIVE: it hunts down whoever you're looking at (or the nearest monster), "
+                        + "blows up on them, then on 2 more nearby enemies, and disappears. Just this key - PASSIVE: it rolls to 3 enemies, just "
+                        + "touching them, then disappears. Each one becomes a Primer bomb: it stays primed until you click Primer to detonate.", 10, 45, c ->
+                        HeartAttack.release(c)), // Heart Attack (Requiem only)
+                bigBangExplosive(), // Big Bang (the Requiem keeps real explosions)
                 ab("Bites the Dust", "The clock winds back: the last 6 seconds are undone for everything within 40 blocks - every mob and "
                         + "player goes back where it was with the health and items it had, the dead come back (players too, if they "
                         + "haven't pressed Respawn), broken blocks return. "
                         + "Only you remember. And whoever hurt you in those seconds still carries the charge: when time snaps back, "
-                        + "they explode.", 1, 20, c -> CreeperRequiem.bitesTheDust(c))
+                        + "they explode.", 1, 12, c -> CreeperRequiem.bitesTheDust(c))
         };
     }
 
-    public static Ability[] creeper() {
-        return new Ability[]{
-                Ability.none(), // no punch: it's a creeper
-
-                ab("Hissing Burst", "Your Stand swells and bursts, blasting nearby enemies. You are never hurt by it.", 2, 12, c -> {
-                    c.sound(SoundEvents.CREEPER_PRIMED, 1.2F, 1.0F);
-                    c.fx(ParticleTypes.HAPPY_VILLAGER, c.stand.position().add(0.0D, 1.0D, 0.0D), 20, 0.6D, 0.05D);
-                    c.later(12, () -> c.explode(c.stand.position().add(0.0D, 1.0D, 0.0D), 1.6D));
-                    return true;
-                }),
-
-                ab("Kamikaze Rush", "Your Stand dashes to your aim point and detonates itself. It reforms after a few seconds.", 5, 18, c -> {
-                    Vec3 target = c.aimPoint(14.0D);
-                    c.stand.lunge(target, 10);
-                    c.sound(SoundEvents.CREEPER_PRIMED, 1.4F, 1.4F);
-                    c.later(10, () -> {
-                        c.explode(c.stand.position().add(0.0D, 1.0D, 0.0D), 2.6D);
-                        c.stand.reform(70);
-                    });
-                    return true;
-                }),
-
+    /** The original Big Bang with real explosions - only Green Detonator Requiem uses this one now. */
+    private static Ability bigBangExplosive() {
+        return
                 ab("Big Bang", "A chain of massive explosions at your aim point. The Stand is consumed and takes a while to reform.", 9, 55, c -> {
                     Vec3 target = c.aimPoint(22.0D);
                     c.stand.lunge(target, 22);
@@ -385,9 +410,46 @@ public final class StandAbilities {
                         c.stand.reform(120);
                     });
                     return true;
+                });
+    }
+
+    public static Ability[] creeper() {
+        return new Ability[]{
+                Ability.none(), // no punch: it's a creeper
+
+                ab("Hissing Burst", "Your Stand swells and bursts, dealing explosive damage to nearby enemies. You are never hurt by it and no blocks break.", 2, 12, c -> {
+                    c.sound(SoundEvents.CREEPER_PRIMED, 1.2F, 1.0F);
+                    c.fx(ParticleTypes.HAPPY_VILLAGER, c.stand.position().add(0.0D, 1.0D, 0.0D), 20, 0.6D, 0.05D);
+                    c.later(12, () -> c.blast(c.stand.position().add(0.0D, 1.0D, 0.0D), 3.5D, 5.0D));
+                    return true;
                 }),
-                ab("Heart Attack", "A little creeper in a little minecart rolls out and hunts down whoever you're looking at (or the nearest monster). It can't be hurt and it doesn't stop: it blows up on its victim, then rolls on after the next one, for 20 seconds. Its blasts never hurt you or break blocks.", 10, 45, c ->
-                        HeartAttack.release(c))
+
+                ab("Kamikaze Rush", "Your Stand dashes to your aim point and bursts in a green shockwave - its strongest hit. No explosion, no broken blocks, and you are never hurt by it. It reforms after a few seconds.", 5, 18, c -> {
+                    Vec3 target = c.aimPoint(14.0D);
+                    c.stand.lunge(target, 10);
+                    c.sound(SoundEvents.CREEPER_PRIMED, 1.4F, 1.4F);
+                    c.later(10, () -> {
+                        c.blast(c.stand.position().add(0.0D, 1.0D, 0.0D), 4.5D, 14.0D, false); // no real explosion, but still the strongest hit
+                        c.stand.reform(70);
+                    });
+                    return true;
+                }),
+
+                ab("Big Bang", "A chain of blasts at your aim point. The Stand is consumed and takes a while to reform. Deals explosive damage without breaking blocks.", 9, 55, c -> {
+                    Vec3 target = c.aimPoint(22.0D);
+                    c.stand.lunge(target, 22);
+                    c.sound(SoundEvents.CREEPER_PRIMED, 1.5F, 0.6F);
+                    c.ring(ParticleTypes.HAPPY_VILLAGER, target.add(0.0D, 0.2D, 0.0D), 5.0D, 40);
+                    c.later(20, () -> c.blast(target, 5.0D, 9.0D));
+                    c.later(24, () -> c.blast(target.add(3.0D, 0.0D, 0.0D), 3.0D, 4.0D));
+                    c.later(27, () -> c.blast(target.add(-3.0D, 0.0D, 0.0D), 3.0D, 4.0D));
+                    c.later(30, () -> {
+                        c.blast(target.add(0.0D, 0.0D, 3.0D), 3.0D, 4.0D);
+                        c.stand.reform(120);
+                    });
+                    return true;
+                }),
+                ab("Sheer Heart Attack", "A tiny bomb of a creeper that hunts on its own: it chases the warmest thing nearby (anything burning first) and blows up on it, then reforms and keeps hunting - up to 3 blasts in 20 seconds. Never breaks blocks, never hurts you.", 1, 40, Signatures::sheerHeartAttack)
         };
     }
 
@@ -427,8 +489,86 @@ public final class StandAbilities {
                         c.effect(e, MobEffects.LEVITATION, 30, 0);
                     }
                     return true;
+                }),
+
+                ab("Scatter", "Your Enderman touches the mob you're looking at and it's flung through the void to a random spot "
+                        + "up to 16 blocks away. Looking at nothing: every enemy within 8 blocks of you is scattered at once.", 6, 10, c -> {
+                    LivingEntity target = c.aim(20.0D);
+                    List<LivingEntity> victims = target != null ? List.of(target) : c.enemies(c.owner.position().add(0.0D, 1.0D, 0.0D), 8.0D);
+                    if (victims.isEmpty()) {
+                        c.fail = "No one to scatter.";
+                        return false;
+                    }
+                    boolean any = false;
+                    for (LivingEntity e : victims) any |= scatter(c, e);
+                    if (!any) c.fail = "Nowhere safe to send them.";
+                    return any;
+                }),
+
+                ab("Swap", "Trade places with whatever you're looking at, up to 32 blocks away: any mob, a player, your own pet, "
+                        + "even an armor stand, a boat or a minecart.", 8, 6, c -> {
+                    net.minecraft.world.entity.Entity t = swapTarget(c, 32.0D);
+                    if (t == null) {
+                        c.fail = "Look at something to swap with.";
+                        return false;
+                    }
+                    Vec3 me = c.owner.position(), it = t.position();
+                    float myYaw = c.owner.getYRot(), myPitch = c.owner.getXRot();
+                    c.level.sendParticles(ParticleTypes.PORTAL, me.x, me.y + 1.0D, me.z, 40, 0.3D, 0.8D, 0.3D, 0.4D);
+                    c.level.sendParticles(ParticleTypes.PORTAL, it.x, it.y + t.getBbHeight() * 0.5D, it.z, 40, 0.3D, 0.6D, 0.3D, 0.4D);
+                    if (t.isPassenger()) t.stopRiding();
+                    if (c.owner.isPassenger()) c.owner.stopRiding();
+                    // It lands where you stood, still facing the way it faced; you land where it was, still looking where you looked.
+                    if (t instanceof net.minecraft.server.level.ServerPlayer sp) sp.teleportTo(me.x, me.y, me.z);
+                    else t.teleportTo(me.x, me.y, me.z);
+                    t.setDeltaMovement(Vec3.ZERO);
+                    t.hurtMarked = true;
+                    if (t instanceof net.minecraft.world.entity.Mob mob) mob.getNavigation().stop();
+                    c.owner.teleportTo(c.level, it.x, it.y, it.z, java.util.Set.of(), myYaw, myPitch);
+                    c.owner.setDeltaMovement(Vec3.ZERO);
+                    c.owner.fallDistance = 0.0F;
+                    t.fallDistance = 0.0F;
+                    c.sound(SoundEvents.ENDERMAN_TELEPORT, 1.0F, 1.0F);
+                    c.level.playSound(null, me.x, me.y, me.z, SoundEvents.ENDERMAN_TELEPORT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 1.3F);
+                    c.level.sendParticles(ParticleTypes.REVERSE_PORTAL, me.x, me.y + 1.0D, me.z, 30, 0.3D, 0.8D, 0.3D, 0.1D);
+                    c.level.sendParticles(ParticleTypes.REVERSE_PORTAL, it.x, it.y + 1.0D, it.z, 30, 0.3D, 0.8D, 0.3D, 0.1D);
+                    return true;
                 })
         };
+    }
+
+    /** Whatever entity your crosshair is on (anything at all but you and your Stand), through no walls. */
+    private static net.minecraft.world.entity.Entity swapTarget(AbilityContext c, double range) {
+        Vec3 eye = c.owner.getEyePosition();
+        Vec3 end = c.beamEnd(eye, c.look(), range);
+        net.minecraft.world.phys.EntityHitResult hit = net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
+                c.level, c.owner, eye, end, new net.minecraft.world.phys.AABB(eye, end).inflate(1.0D),
+                e -> e != c.owner && e != c.stand && !(e instanceof com.mobstands.entity.StandEntity) && !e.isSpectator()
+                        && e.isAlive() && !(e instanceof net.minecraft.world.entity.projectile.Projectile)
+                        && !(e instanceof net.minecraft.world.entity.item.ItemEntity) && !(e instanceof net.minecraft.world.entity.ExperienceOrb),
+                0.3F);
+        return hit == null ? null : hit.getEntity();
+    }
+
+    /** Throws {@code e} to a random safe spot within 16 blocks (the way an enderman teleports). */
+    private static boolean scatter(AbilityContext c, LivingEntity e) {
+        Vec3 from = e.position();
+        for (int i = 0; i < 16; i++) {
+            double x = from.x + (c.owner.getRandom().nextDouble() - 0.5D) * 32.0D;
+            double y = net.minecraft.util.Mth.clamp(from.y + (c.owner.getRandom().nextInt(17) - 8), c.level.getMinBuildHeight(), c.level.getMaxBuildHeight() - 1);
+            double z = from.z + (c.owner.getRandom().nextDouble() - 0.5D) * 32.0D;
+            if (Math.abs(x - from.x) + Math.abs(z - from.z) < 4.0D) continue; // somewhere actually different
+            if (e.randomTeleport(x, y, z, true)) {
+                if (e instanceof net.minecraft.world.entity.Mob mob) mob.getNavigation().stop();
+                c.level.sendParticles(ParticleTypes.PORTAL, from.x, from.y + e.getBbHeight() * 0.5D, from.z, 40, 0.4D, 0.6D, 0.4D, 0.4D);
+                c.level.sendParticles(ParticleTypes.REVERSE_PORTAL, e.getX(), e.getY() + e.getBbHeight() * 0.5D, e.getZ(), 30, 0.4D, 0.6D, 0.4D, 0.1D);
+                c.level.playSound(null, from.x, from.y, from.z, SoundEvents.ENDERMAN_TELEPORT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 1.0F);
+                c.level.playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.ENDERMAN_TELEPORT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 1.2F);
+                StandCombat.credit(c.owner, e);
+                return true;
+            }
+        }
+        return false;
     }
 
     // ================================================================== THE ENDER WORLD (Legendary): stops time
@@ -493,14 +633,16 @@ public final class StandAbilities {
     public static Ability[] minecart() {
         return new Ability[]{
                 Ability.none(),
-                ab("Rail Rider", "Hop in and drive your Minecart anywhere, no rails needed: rails fade in under you and vanish behind you. W to speed up, S to brake, steer with your mouse, Shift (or Z again) to hop out.", 1, 0.5, c -> {
+                ab("Rail Rider", "Hop in and drive your Minecart anywhere, no rails needed: rails fade in under you and vanish behind you. W to speed up, S to brake, steer with your mouse, Shift (or Z again) to hop out. "
+                        + "Other players can right-click you to climb aboard: up to 4 cars couple on behind and follow your exact path, like a train.", 1, 0.5, c -> {
                     StandManager.cartToggle(c.owner);
                     return true;
                 }),
                 ab("Powered Rails", "Golden powered rails with redstone underneath lay themselves under you: a steady extra burst of speed that lasts a long time (12 s).", 3, 20, c ->
                         StandManager.cartBoost(c.owner, 1)),
                 ab("Nitro", "Light the cart up: flames roar out the back and you blast forward far faster than anything else - but it burns out quickly (3 s).", 6, 25, c ->
-                        StandManager.cartBoost(c.owner, 2))
+                        StandManager.cartBoost(c.owner, 2)),
+                ab("Cattle Car", "A minecart slams into the creature you're looking at (24 blocks), scoops it up and hauls it off in the direction you're facing. It can't climb out for 6 seconds.", 1, 15, Signatures::cattleCar)
         };
     }
 
@@ -549,7 +691,11 @@ public final class StandAbilities {
                         }
                     });
                     return true;
-                })
+                }),
+
+                ab("Iron Launch", "Your Golem cups its hand under you and hurls you into the sky (about 12 blocks). Coming down, "
+                        + "you're a mace: hit someone on the way down, or land next to them, for a mace smash - the further you "
+                        + "fell, the harder it hits, and everyone around the impact is thrown back. No fall damage.", 3, 10, GolemLaunch::launch)
         };
     }
 
@@ -560,15 +706,13 @@ public final class StandAbilities {
                 ab("Rod Strike", "Jabs one of its burning rods into the target, setting it on fire.", 1, 0.7, c ->
                         melee(c, 4.5D, 0.5D, 0.15D, t -> t.setRemainingFireTicks(Math.max(t.getRemainingFireTicks(), 60)))),
 
-                ab("Flame Barrage", "Three fireballs in a fan.", 2, 7, c -> {
-                    shoot(c, StandProjectile.Kind.FIREBALL, 3.5D, -0.2D);
-                    shoot(c, StandProjectile.Kind.FIREBALL, 3.5D, 0.0D);
-                    shoot(c, StandProjectile.Kind.FIREBALL, 3.5D, 0.2D);
-                    c.sound(SoundEvents.BLAZE_SHOOT, 1.2F, 0.8F);
-                    return true;
-                }),
+                ab("Rod Barrage", "Your Blaze plants itself in front of you and jabs its burning rods into everything ahead, again and again, setting them alight - then one last blazing thrust. Take the full barrage and you're sent flying.", 2, 8, c ->
+                        barrage(c, 1.2D, 6.0D, e -> {
+                            e.setRemainingFireTicks(Math.max(e.getRemainingFireTicks(), 80));
+                            c.fx(ParticleTypes.FLAME, e.position().add(0.0D, e.getBbHeight() * 0.5D, 0.0D), 4, 0.25D, 0.03D);
+                        })),
 
-                ab("Ring of Fire", "A ring of flames erupts around you, burning and repelling enemies.", 5, 14, c -> {
+                ab("Ring of Fire", "A ring of flames erupts around you, burning and repelling enemies, and 8 fireballs burst out of it in every direction.", 5, 14, c -> {
                     Vec3 center = c.owner.position();
                     c.sound(SoundEvents.FIRECHARGE_USE, 1.2F, 0.8F);
                     c.ring(ParticleTypes.FLAME, center.add(0.0D, 0.2D, 0.0D), 2.5D, 32);
@@ -578,6 +722,13 @@ public final class StandAbilities {
                         e.setRemainingFireTicks(Math.max(e.getRemainingFireTicks(), 100));
                         c.push(e, e.position().subtract(center), 0.7D, 0.2D);
                     }
+                    // ...and 8 fireballs burst out of the ring in every direction.
+                    for (int i = 0; i < 8; i++) {
+                        double a = (Math.PI * 2.0D) * i / 8.0D;
+                        Vec3 dir = new Vec3(Math.cos(a), -0.03D, Math.sin(a));
+                        c.fire(StandProjectile.Kind.FIREBALL, center.add(0.0D, 1.0D, 0.0D).add(dir.scale(2.5D)), dir, 3.0D);
+                    }
+                    c.sound(SoundEvents.BLAZE_SHOOT, 1.0F, 1.0F);
                     return true;
                 }),
 
@@ -601,6 +752,14 @@ public final class StandAbilities {
                             c.sound(SoundEvents.FIRECHARGE_USE, 1.4F, 0.6F);
                         });
                     }
+                    return true;
+                }),
+
+                ab("Flame Barrage", "Three fireballs in a fan.", 2, 7, c -> {
+                    shoot(c, StandProjectile.Kind.FIREBALL, 3.5D, -0.2D);
+                    shoot(c, StandProjectile.Kind.FIREBALL, 3.5D, 0.0D);
+                    shoot(c, StandProjectile.Kind.FIREBALL, 3.5D, 0.2D);
+                    c.sound(SoundEvents.BLAZE_SHOOT, 1.2F, 0.8F);
                     return true;
                 })
         };
@@ -650,7 +809,10 @@ public final class StandAbilities {
                         });
                     }
                     return true;
-                })
+                }),
+
+                ab("Stop Heart", "Like Jotaro against DIO: your Stand stops your heart. To everything around you, you're dead - mobs hunting you lose interest, nothing new comes for you, and everyone sees you die in chat. The first 5 seconds are free; after that your body fails fast - a heavy hit every second, a quarter of your health each, so about four and you're dead for real. Press it again (or strike something) to restart your heart with a huge thump and a rush of adrenaline. Lasts at most 30 seconds.", 7, 45,
+                        HeartStop::use)
         };
     }
 
@@ -774,7 +936,9 @@ public final class StandAbilities {
                         });
                     }
                     return true;
-                })
+                }),
+
+                ab("Bone Cage", "Fires a bone at the creature you're looking at (30 blocks): a cage of bone blocks snaps shut around it. It can't get out for 5 seconds, then the bones crumble.", 1, 20, Signatures::boneCage)
         };
     }
 
@@ -810,7 +974,9 @@ public final class StandAbilities {
                         StandProjectile.placeWeb(c.level, e.blockPosition(), 120);
                     }
                     return true;
-                })
+                }),
+
+                ab("Silk Swing", "Shoot a web line at any block you're looking at (36 blocks) and swing up to it. Press again or sneak to let go early. You always land softly after a swing.", 1, 2.5, Signatures::silkSwing)
         };
     }
 
@@ -889,7 +1055,7 @@ public final class StandAbilities {
                     c.sound(SoundEvents.PHANTOM_FLAP, 0.6F, 1.6F);
                     return true;
                 }),
-                ab("Allay Hold", "Point at an enemy: one of your free Allays grabs it and holds it up in the air (great for bow shots). Use it on the same enemy again to send another Allay: each one adds 8 seconds and lifts it higher. Hold the key to make them let go (just the one you look at, or all of them).", 1, 0.4, c -> {
+                ab("Allay Hold", "Point at an enemy: one of your free Allays grabs it and holds it up in the air (great for bow shots). Use it on the same enemy again to send another Allay: each one adds 8 seconds and lifts it higher. Hold the key while looking at a held enemy to drag it around with your crosshair - swing your view down hard while dragging to SLAM it into the ground, hurting everything (and everyone) around the impact. Spam the key 3 times to make them let go (just the one you look at, or all of them).", 1, 0.4, c -> {
                     LivingEntity target = c.aim(24.0D);
                     if (target == null) return false;
                     StandManager.allayHold(c.owner, target);
@@ -898,7 +1064,9 @@ public final class StandAbilities {
                 ab("Roam", "Toggle: your Allay leaves your side and flutters around freely. While it roams you can hit it to make it duplicate (up to 4 Allays; duplicates last 3 minutes).", 1, 0.5, c -> {
                     StandManager.allayRoamToggle(c.owner);
                     return true;
-                })};
+                }),
+
+                ab("Lullaby", "Your Allay sings: every creature within 12 blocks falls asleep for 6 seconds - it can't move or come after you until something hits it. Players nearby just get very, very drowsy. Bosses don't listen.", 1, 25, Signatures::lullaby)};
     }
 
     /** How long each Allay holding an enemy keeps it up (ticks). */
@@ -923,16 +1091,24 @@ public final class StandAbilities {
         return new Ability[]{
                 ab("Snout Bump", "A heavy shove with its big snout.", 1, 0.9, c ->
                         melee(c, 3.0D, 1.4D, 0.3D, t -> c.sound(SoundEvents.SNIFFER_STEP, 1.0F, 0.8F))),
-                ab("Sniff Out", "A gamble: three slots roll three random structures. Pick one and your Sniffer finds the nearest. "
-                        + "Pass, and the next roll is in 10 minutes. Pass three times and its nose is trained: "
-                        + "the next sniff lets you search for anything.", 1, 600, c -> com.mobstands.stand.Sniff.use(c.owner)),
-                Ability.none(), Ability.none()};
+                ab("Sniff Out", "Costs a spyglass: like a camera, Hermit Purple's vines crush it, and the shards roll three random "
+                        + "structures. Pick one and your Sniffer finds the nearest. Pass, and the next roll is in 10 minutes. "
+                        + "Pass three times and its nose is trained: the next sniff lets you search for anything.", 1, 600,
+                        c -> com.mobstands.stand.Sniff.use(c.owner)),
+                ab("Thorn Vine", "Hermit Purple lashes out (16 blocks). On a creature: the thorns snare it and drag it to you, "
+                        + "slowed. On a wall or the ground: the vines catch it and haul you there.", 2, 5, Hermit::vine),
+                ab("Spirit Photograph", "Costs a spyglass. Crush it and the shards show you where something is - whatever's in "
+                        + "your other hand: a block (nearest within 48), a spawn egg (nearest of that creature), any other item "
+                        + "(nearest lying on the ground), or nothing: the nearest other player. You keep the photo, and the "
+                        + "vines point the way until you get there.", 4, 20, Hermit::photograph),
+                ab("Vine Sense", "The vines spread across the ground: every creature within 32 blocks glows for 10 seconds, "
+                        + "even through walls.", 6, 30, Hermit::sense)};
     }
 
     public static Ability[] wardenRequiem() {
         return new Ability[]{
                 Ability.none(), // it never lifts a finger: calamity does the work
-                ab("Dark Arrival", "Turns on or off the darkness that falls on everyone nearby (you too) when you summon "
+                ab("Dark Arrival", "Turns on or off the darkness that falls on everyone nearby (everyone but you) when you summon "
                         + "Wonder of Deep. A deep sculk pulse: it's on. Sculk going quiet: it's off.", 1, 0.5, c -> {
                     c.data.wodDarkOff = !c.data.wodDarkOff;
                     if (c.data.wodDarkOff) c.sound(SoundEvents.SCULK_CLICKING_STOP, 1.2F, 0.6F);
@@ -951,26 +1127,118 @@ public final class StandAbilities {
                         + "Everything else it does needs rain falling on you.", 1, 180, RainPowers::rainCall),
                 ab("Rain Walk", "Toggle. In the rain, the drops under your feet stop in the air and hold you: walk and run "
                         + "on them. Jump to climb higher, sneak to drop. If the rain stops under you, you float down.", 1, 1.0, RainPowers::rainWalk),
-                ab("Rain Blades", "Stops the rain in a wall across your path, 3 blocks ahead, for 8 seconds. "
-                        + "Anything that moves through it gets cut.", 3, 12, RainPowers::rainBlades),
-                ab("Rain Cage", "Stops the rain all around the creature you're looking at for 6 seconds. "
-                        + "If it moves, the drops cut it.", 5, 15, RainPowers::rainCage),
                 ab("Rain Dash", "Slip through the rain: a fast dash where you're looking, cutting what you pass.", 7, 4, RainPowers::rainDash)};
+    }
+
+    // ================================================================== SILVERFISH (Epic): Silver Fingers - Sticky Fingers
+
+    public static Ability[] silverfish() {
+        return new Ability[]{
+                ab("Swarm Bite", "The swarm pours over the creature in front of you and bites, slowing it down.", 1, 0.7, c -> {
+                    LivingEntity t = c.meleeTarget(6.0D);
+                    Vec3 reach = t != null ? t.position().add(0.0D, t.getBbHeight() * 0.5D, 0.0D)
+                            : c.owner.getEyePosition().add(c.look().scale(3.0D));
+                    c.stand.lunge(reach, 6);
+                    c.sound(SoundEvents.SILVERFISH_AMBIENT, 1.0F, 1.3F);
+                    c.later(4, () -> {
+                        if (t == null || !t.isAlive()) return;
+                        t.invulnerableTime = 0;
+                        c.hurt(t, c.dmg(4.0D));
+                        c.effect(t, MobEffects.MOVEMENT_SLOWDOWN, 30, 0);
+                        c.sound(SoundEvents.SILVERFISH_HURT, 0.9F, 1.4F);
+                        c.fx(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK,
+                                net.minecraft.world.level.block.Blocks.STONE.defaultBlockState()), reach, 12, 0.3D, 0.05D);
+                    });
+                    return true;
+                }),
+
+                ab("Zipper Punch", "A punch that leaves a zipper on whatever it hits. It unzips - and the creature comes apart: "
+                        + "a heavy hit, then Weakness and Slowness while it's open.", 2, 6, c -> {
+                    LivingEntity t = c.meleeTarget(6.0D);
+                    if (t == null) {
+                        c.fail = "Nothing to hit.";
+                        return false;
+                    }
+                    c.stand.lunge(t.position().add(0.0D, t.getBbHeight() * 0.5D, 0.0D), 5);
+                    c.later(4, () -> {
+                        if (!t.isAlive()) return;
+                        t.invulnerableTime = 0;
+                        c.hurt(t, c.dmg(6.0D));
+                        c.push(t, t.position().subtract(c.owner.position()), 0.5D, 0.1D);
+                        Zipper.zipMob(c, t);
+                        Zipper.apart(c, t);
+                        c.later(com.mobstands.entity.ZipperEntity.OPEN_TICKS, () -> {
+                            if (!t.isAlive()) return;
+                            t.invulnerableTime = 0;
+                            c.hurt(t, c.dmg(4.0D));
+                        });
+                    });
+                    return true;
+                }),
+
+                ab("Zip Away", "Look at a wall or the ground close by: a zipper runs down it and splits open onto a purple pocket "
+                        + "dimension. You slide in and it zips shut behind you. In there nothing can see, find or hurt you - "
+                        + "whatever was after you loses you. Press again to unzip and step back out.", 3, 4, Zipper::hide),
+
+                ab("Zip Through", "Zip open a wall, floor or ceiling and come out the other side (up to 12 blocks thick).",
+                        6, 12, Zipper::through)
+        };
+    }
+
+    // ================================================================== ILLUSIONER (Epic): Smoke and Mirrors
+
+    public static Ability[] illusioner() {
+        return new Ability[]{
+                ab("Phantom Arrow", "Your Stand draws its bow: a glowing arrow at whatever you're looking at - it lights up whatever it hits.", 1, 0.9, Illusion::arrow),
+                ab("Mirror Images", "Four copies of you shimmer into being around you for 12 seconds. Each time something hits you there's a "
+                        + "good chance it hits a copy instead - the copy bursts and the hit never lands. Four copies, four saves.", 2, 20, Illusion::mirror),
+                ab("Blinding Spell", "Point at someone (24 blocks): your Stand casts blindness on them - they can't see, they're slowed, "
+                        + "and a monster loses track of you.", 3, 12, Illusion::blind),
+                ab("Vanish", "You disappear completely for 10 seconds - armour, items and all. Everything chasing you loses you. "
+                        + "Attacking brings you back.", 5, 30, Illusion::vanish),
+                ab("Mirror Maze", "Every creature within 14 blocks is lost in illusions for 8 seconds: blind, and seeing you in every "
+                        + "face around it - so it attacks whatever's nearest. Other players get dizzy.", 7, 40, Illusion::maze)
+        };
+    }
+
+    // ================================================================== LLAMA (Rare): Oh! Lonesome Llama - Mountain Tim
+
+    public static Ability[] llama() {
+        return new Ability[]{
+                ab("Spit", "A glob of spit at whatever you're looking at: it stings and slows.", 1, 0.9, StandTools::spit),
+                ab("Lone Rider", "Ride your rope: you're hauled to whatever you've lassoed and kick it - or, with nothing roped, lasso the "
+                        + "block you're looking at and zip there.", 2, 6, StandTools::ride),
+                ab("Oh! Lonesome Me", "The body on the end of your rope comes apart along it: a huge hit, then it's weak and can barely "
+                        + "move. The rope's used up.", 4, 15, StandTools::lonesome),
+                ab("Stampede", "A herd of phantom llamas charges out ahead of you, trampling and flinging everything in its path.", 6, 25, StandTools::stampede)
+        };
+    }
+
+    // ================================================================== GUARDIAN (Rare): Reef Boy - Beach Boy
+
+    public static Ability[] guardian() {
+        return new Ability[]{
+                ab("Guardian Laser", "A beam charges for a moment, then burns whatever you're looking at (16 blocks).", 1, 1.4, StandTools::laser),
+                ab("Heartbeat", "You feel every heartbeat within 32 blocks: everything alive glows for 8 seconds, even through walls.", 2, 20, StandTools::heartbeat),
+                ab("Deep Reel", "Whatever's on your hook is torn all the way to you and slammed down. The line's used up.", 4, 12, StandTools::deepReel),
+                ab("Elder Curse", "Everyone within 16 blocks is weighed down by the deep for 10 seconds: slowed, weakened, too tired to mine.", 6, 30, StandTools::curse)
+        };
     }
 
     public static Ability[] shulker() {
         return new Ability[]{
                 ab("Shell Strike", "Your Shulker pops its lid and strikes.", 1, 0.9, c ->
                         melee(c, 7.0D, 1.4D, 0.3D, t -> c.sound(SoundEvents.SHULKER_BULLET_HIT, 0.9F, 1.1F))),
-                ab("Gravity Shift", "Look at a wall or ceiling and press: your gravity turns toward it and you fall onto it. "
-                        + "Walk on it like a floor. "
-                        + "Look at the floor (or the open sky) and press to set your gravity back.", 1, 1.0, GravityFlip::gravityShift),
-                ab("Gravity Punch", "Hold to open the gravity wheel and let go on an arrow: up, left, right, back at you - or the "
-                        + "middle for away from you. Your next punch turns that creature's gravity that way: it falls off toward it "
-                        + "and has to live on whatever it lands on. Lasts 3 minutes.", 1, 8, c -> false),
-                ab("Gravity Turn", "Hold to open the gravity wheel for yourself and let go on an arrow: up - the ceiling, "
-                        + "left or right - the wall on that side, down - back to the normal floor, the middle - the wall in "
-                        + "front of you. No aiming: your gravity just turns, and you fall onto it.", 1, 0.25, c -> false)};
+                ab("Gravity Zone", "Mark out a sphere of turned gravity at your aim point for 15 seconds. Gravity inside points the way "
+                        + "you were looking: look at a wall and anything inside (you included) falls onto that wall; look up and it falls "
+                        + "into the sky. Look down for crushing gravity: pinned to the ground, can't jump. Step out and you fall normally again.", 1, 20, MoonPowers::zone),
+                ab("Gravity Punch", "Hold the key and tap a direction: W away from you, A left, D right, Space up into the sky, "
+                        + "S back toward you (just tapping the key = away). Your next punch turns that creature's gravity that way: it falls off toward "
+                        + "it and has to live on whatever it lands on. Lasts 3 minutes.", 1, 8, c -> false),
+                ab("Gravity Turn", "Hold the key and tap a direction: your own gravity turns right away. W the wall in front, A the left "
+                        + "wall, D the right wall, Space the ceiling, S back to the normal floor (just tapping the key also puts you back).", 1, 0.25, c -> false),
+                ab("Orbit", "Your Shulker becomes a tiny moon: up to 12 nearby enemies and dropped items are pulled into orbit around "
+                        + "you. Press again to fling them all where you're looking (it hurts). After 8 seconds they fly off on their own.", 4, 18, MoonPowers::orbit)};
     }
 
     public static Ability[] pig() {
@@ -982,7 +1250,8 @@ public final class StandAbilities {
                             net.minecraft.sounds.SoundSource.PLAYERS, 0.8F, 1.0F);
                     return true;
                 }),
-                Ability.none(), Ability.none()};
+                ab("Truffle Hunt", "Your pig roots around in the ground and digs something up: usually food or gold nuggets, sometimes emeralds or a diamond... and once in a long while, a Stand Arrow.", 1, 120, Signatures::truffleHunt),
+                Ability.none()};
     }
 
     // ================================================================== PIGLINS (from a Pig Stand struck by lightning)
@@ -997,14 +1266,15 @@ public final class StandAbilities {
                         c.sound(SoundEvents.TRIDENT_HIT, 0.8F, 1.3F);
                     });
                 }),
-                Ability.none(), Ability.none(), Ability.none()};
+                snatch(true), // ACT 2: armor only
+                Ability.none(), Ability.none()};
     }
 
     public static Ability[] piglin() {
         return new Ability[]{
                 ab("Gilded Jab", "A quick, proud punch.", 1, 0.65, c ->
                         melee(c, 5.0D, 0.8D, 0.25D, null)),
-                snatch(),
+                snatch(false), // ACT 3: armor and whatever it's holding
                 Ability.none(), Ability.none()};
     }
 
@@ -1025,9 +1295,11 @@ public final class StandAbilities {
                         c -> PropertySwap.release(c)),
                 ab("Another World", "Slip into the world next door with the mob you're looking at: the same place, but nobody else is there - "
                         + "every other mob around you is simply gone. Settle it one on one. When it dies (or after a minute, or if you walk "
-                        + "too far) you slip back, and everyone you left behind is right where they were.", 1, 40, c -> OtherWorld.use(c)),
+                        + "too far, or you press it again) you slip back, and everyone you left behind is right where they were.", 1, 40, c -> OtherWorld.use(c)),
                 ab("Null Bubble", "A bubble of something that doesn't exist drifts after the creature you look at - slowly, straight "
-                        + "through walls, shields and armor - and pops inside it: damage no armor or Resistance can soften.", 1, 25,
+                        + "through walls, shields and armor - and pops inside it. Nothing softens it: it always leaves them at exactly half "
+                        + "a heart (never a kill). Then they heal fast, back to half their health in just 2 seconds - unless they're "
+                        + "hit again first. That's your window to reach them.", 1, 25,
                         NullBubble::use),
                 Ability.none()
         };
@@ -1043,25 +1315,49 @@ public final class StandAbilities {
                         barrage(c, 1.4D, 7.0D)),
                 ab("Return to Zero", "A 2-second counter stance. If anything strikes you inside it, the attack never happens: it's dragged back to before it acted, and it dies - again and again, a different way each time - before it's lost in the loop forever. What it carried comes to you. Bosses: the attack is simply nullified... unless the boss is nearly dead. (Press X or Shift to skip the scene.)", 1, 12, c ->
                         Ger.returnToZero(c)),
-                Ability.none(), // (Life Giver was removed)
+                ab("Iron Shot", "GER holds up an iron nugget between two fingers... and flicks it. It flies so fast it leaves a blazing "
+                        + "white-gold trail straight through whatever you're looking at - and it doesn't stop: it pierces every creature "
+                        + "in its path (up to 64 blocks, or the first wall). Each one takes the huge hit and is hurled back.", 1, 10, GerShot::shoot),
                 ab("Golden Barrier", "Like Love Train: a curtain of golden light falls from the sky over everything around you for 20 seconds. Nothing inside can be hurt by raiders or monsters, and they're pushed back out of the light.", 1, 90, c ->
                         Ger.goldenBarrier(c))
         };
     }
 
-    /** Piglin Snatch (Gilded Swine, and its Requiem). */
-    static Ability snatch() {
+    /** The armor slots, best piece first. */
+    private static final net.minecraft.world.entity.EquipmentSlot[] ARMOR_ORDER = {
+            net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.entity.EquipmentSlot.HEAD,
+            net.minecraft.world.entity.EquipmentSlot.LEGS, net.minecraft.world.entity.EquipmentSlot.FEET};
+
+    /**
+     * Snatch. ACT 2 (Thunderborn Swine, {@code armorOnly}): rips off a piece of the mob's armor.
+     * ACT 3 (Gilded Swine): takes what it's holding (its sword, bow...) first, otherwise a piece of its armor.
+     */
+    static Ability snatch(boolean armorOnly) {
         return
-                ab("Snatch", "Your Piglin darts at the mob you're looking at and steals what it's holding (its sword, bow, crossbow...) and hands it to you.", 1, 12, c -> {
+                ab("Snatch", armorOnly
+                        ? "Your Stand darts at the mob you're looking at and rips off a piece of its armor (chestplate first, then helmet, leggings, boots) and hands it to you."
+                        : "Your Piglin darts at the mob you're looking at and steals what it's holding (its sword, bow, crossbow...) - or, if its hands are empty, a piece of its armor - and hands it to you.", 1, 12, c -> {
                     LivingEntity target = c.aim(14.0D);
                     if (!(target instanceof net.minecraft.world.entity.Mob mob)) {
                         c.owner.displayClientMessage(net.minecraft.network.chat.Component.literal("Look at a mob to steal from."), true);
                         return false;
                     }
-                    net.minecraft.world.entity.EquipmentSlot slot = !mob.getMainHandItem().isEmpty() ? net.minecraft.world.entity.EquipmentSlot.MAINHAND
-                            : !mob.getOffhandItem().isEmpty() ? net.minecraft.world.entity.EquipmentSlot.OFFHAND : null;
+                    net.minecraft.world.entity.EquipmentSlot pick = null;
+                    if (!armorOnly) {
+                        pick = !mob.getMainHandItem().isEmpty() ? net.minecraft.world.entity.EquipmentSlot.MAINHAND
+                                : !mob.getOffhandItem().isEmpty() ? net.minecraft.world.entity.EquipmentSlot.OFFHAND : null;
+                    }
+                    if (pick == null) {
+                        for (net.minecraft.world.entity.EquipmentSlot a : ARMOR_ORDER) {
+                            if (!mob.getItemBySlot(a).isEmpty()) {
+                                pick = a;
+                                break;
+                            }
+                        }
+                    }
+                    final net.minecraft.world.entity.EquipmentSlot slot = pick;
                     if (slot == null) {
-                        c.owner.displayClientMessage(net.minecraft.network.chat.Component.literal("It has nothing to steal."), true);
+                        c.owner.displayClientMessage(net.minecraft.network.chat.Component.literal(armorOnly ? "It has no armor to steal." : "It has nothing to steal."), true);
                         return false;
                     }
                     c.sound(SoundEvents.PIGLIN_ADMIRING_ITEM, 1.0F, 1.2F);
@@ -1113,7 +1409,7 @@ public final class StandAbilities {
     public static Ability[] squid() {
         return new Ability[]{
                 ab("Tidal Slam", "Your Squid rises high and gathers water for a long moment (1.5 s), then crashes down on the spot you're "
-                        + "looking at like an anvil: heavy damage to everything close, knocked flat and slowed. Long cooldown.", 1, 12, c -> {
+                        + "looking at like an anvil: everything close takes a solid hit, is knocked flat and slowed. Long cooldown.", 1, 12, c -> {
                     LivingEntity target = c.aim(18.0D);
                     Vec3 spot = target != null ? target.position() : c.aimPoint(18.0D);
                     c.sound(SoundEvents.SQUID_SQUIRT, 1.2F, 0.5F);
@@ -1140,7 +1436,7 @@ public final class StandAbilities {
                         c.ring(ParticleTypes.CLOUD, at.add(0.0D, 0.2D, 0.0D), 3.0D, 28);
                         for (LivingEntity e : c.enemies(at, 3.5D)) {
                             double d = e.position().distanceTo(at);
-                            float dmg = c.dmg(9.0D) * (float) Math.max(0.5D, 1.0D - d / 4.0D);
+                            float dmg = c.dmg(3.5D) * (float) Math.max(0.5D, 1.0D - d / 4.0D); // (was 9: it one-tapped people)
                             c.hurt(e, dmg);
                             c.push(e, e.position().subtract(at), 0.6D, 0.5D);
                             c.effect(e, net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN, 60, 2);
@@ -1177,7 +1473,7 @@ public final class StandAbilities {
                     return true;
                 }),
 
-                ab("Rain Shot", "Your Squid tips itself over sideways and fires a stream of hard rain straight at your target for 2 seconds: rapid small hits that push them back and slow them.", 3, 10, c -> {
+                ab("Rain Shot", "Your Squid tips itself over sideways and fires a stream of hard rain straight where you're aiming for 2 seconds: rapid small hits that push them back and slow them. Free: no cooldown - fire again as soon as it ends.", 1, 2.4, c -> {
                     LivingEntity target = c.aim(20.0D);
                     c.sound(SoundEvents.SQUID_SQUIRT, 1.2F, 0.7F);
                     // Tilt first (the animation), then the barrage.
@@ -1185,6 +1481,22 @@ public final class StandAbilities {
                         final int tick = i;
                         c.later(i, () -> rainShotTick(c, target, tick));
                     }
+                    return true;
+                }),
+
+                ab("Drift", "Steer your Squid yourself: you see through it and float it around with WASD, Space up, Shift down, Ctrl faster - "
+                        + "but only close by (up to 8 blocks from you). All its other moves still work while you steer it, so you can park "
+                        + "November Rain or Downpour right where you want them. Press again to call it back.", 4, 1, c -> {
+                    boolean on = !c.stand.isPiloting();
+                    if (on) {
+                        Vec3 at = c.owner.getEyePosition().add(c.owner.getLookAngle().scale(1.5D));
+                        c.stand.setPos(at.x, at.y - 0.3D, at.z);
+                        c.owner.displayClientMessage(net.minecraft.network.chat.Component.literal("Drift: WASD + Space/Shift to steer your Squid (8 blocks), press again to call it back.")
+                                .withStyle(s -> s.withColor(0x5B8FD6)), true);
+                    }
+                    c.stand.setPiloting(on);
+                    c.sound(on ? SoundEvents.SQUID_SQUIRT : SoundEvents.SQUID_AMBIENT, 1.0F, on ? 0.8F : 1.1F);
+                    c.fx(ParticleTypes.BUBBLE_POP, c.stand.position().add(0.0D, 0.5D, 0.0D), 12, 0.3D, 0.05D);
                     return true;
                 })
         };
@@ -1198,19 +1510,24 @@ public final class StandAbilities {
     private static void rainShotTick(AbilityContext c, LivingEntity target, int tick) {
         if (c.stand == null || !c.stand.isAlive() || !c.owner.isAlive()) return;
         Vec3 from = c.stand.position().add(0.0D, 0.9D, 0.0D);
-        Vec3 dir = target != null && target.isAlive()
-                ? target.position().add(0.0D, target.getBbHeight() * 0.5D, 0.0D).subtract(from)
-                : c.owner.getLookAngle();
+        // Aim: the mob you were looking at (while it lives), otherwise whatever your crosshair is on right now - so you
+        // can sweep the stream around. (It used to fire along your look direction but from the Squid, which floats
+        // above your head - a parallel line well above where you were aiming, hitting nothing.)
+        LivingEntity lock = target != null && target.isAlive() && target.distanceTo(c.stand) < RAIN_SHOT_RANGE ? target : c.aim(RAIN_SHOT_RANGE);
+        Vec3 aimAt = lock != null ? lock.position().add(0.0D, lock.getBbHeight() * 0.5D, 0.0D) : c.aimPoint(RAIN_SHOT_RANGE);
+        Vec3 dir = aimAt.subtract(from);
+        // The Squid turns to face it (and keeps facing it, so its tentacles point where the water goes).
+        c.stand.setFaceYaw((float) Math.toDegrees(Math.atan2(-dir.x, dir.z)));
         if (dir.lengthSqr() < 1.0E-4D) return;
         dir = dir.normalize();
         // Stops at the first wall.
         net.minecraft.world.phys.BlockHitResult wall = c.level.clip(new net.minecraft.world.level.ClipContext(from, from.add(dir.scale(RAIN_SHOT_RANGE)),
                 net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, c.owner));
         double len = wall.getType() == net.minecraft.world.phys.HitResult.Type.MISS ? RAIN_SHOT_RANGE : wall.getLocation().distanceTo(from);
-        // The drops: a jittery stream of water with splashes at the end.
-        for (double d = 0.6D; d < len; d += 0.45D) {
+        // The drops: a tight, straight stream of water with splashes at the end.
+        for (double d = 0.6D; d < len; d += 0.3D) {
             Vec3 p = from.add(dir.scale(d));
-            double j = 0.08D + d * 0.012D;
+            double j = 0.02D + d * 0.004D;
             c.level.sendParticles(net.minecraft.core.particles.ParticleTypes.FALLING_WATER, p.x, p.y, p.z, 1, j, j, j, 0.0D);
             if (c.owner.getRandom().nextInt(3) == 0) c.level.sendParticles(net.minecraft.core.particles.ParticleTypes.SPLASH, p.x, p.y, p.z, 1, j, j, j, 0.05D);
         }
@@ -1226,55 +1543,31 @@ public final class StandAbilities {
             if (along < 0.0D || along > len) continue;
             if (from.add(dir.scale(along)).distanceTo(center) > e.getBbWidth() * 0.5D + 0.6D) continue;
             e.invulnerableTime = 0;
-            StandCombat.hurt(c.owner, e, c.dmg(1.0D));
+            StandCombat.hurt(c.owner, e, c.dmg(1.2D));
             if (e instanceof net.minecraft.world.entity.monster.EnderMan) {
                 // Water burns Endermen: the rain stream hits them extra hard.
                 e.invulnerableTime = 0;
                 e.hurt(c.level.damageSources().drown(), 2.0F);
             }
-            e.setDeltaMovement(e.getDeltaMovement().add(dir.x * 0.18D, 0.02D, dir.z * 0.18D));
+            e.setDeltaMovement(e.getDeltaMovement().add(dir.x * 0.25D, 0.03D, dir.z * 0.25D));
+            c.level.sendParticles(net.minecraft.core.particles.ParticleTypes.SPLASH, center.x, center.y, center.z, 8, 0.25D, 0.25D, 0.25D, 0.1D);
             e.hurtMarked = true;
             e.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
             e.clearFire();
         }
     }
 
+    /** Green Temperance (Slime): Yellow Temperance, in slime green. */
     public static Ability[] slime() {
         return new Ability[]{
-                ab("Squish Slam", "A gooey slam with big knockback.", 1, 0.8, c ->
-                        melee(c, 3.5D, 1.6D, 0.4D, t -> c.sound(SoundEvents.SLIME_ATTACK, 1.0F, 1.0F))),
-
-                ab("Ricochet Blob", "Launch a blob that bounces off walls, damaging and shoving enemies.", 2, 7, c -> {
-                    shoot(c, StandProjectile.Kind.SLIME, 5.0D, 0.0D);
-                    c.sound(SoundEvents.SLIME_JUMP, 1.0F, 1.2F);
-                    return true;
-                }),
-
-                ab("Super Bounce", "Launch yourself high into the air. Fall damage is cancelled.", 4, 10, c -> {
-                    Vec3 look = c.flatLook();
-                    c.owner.setDeltaMovement(look.x * 0.55D, 1.25D, look.z * 0.55D);
-                    c.owner.hurtMarked = true;
-                    c.owner.fallDistance = 0.0F;
-                    c.owner.addEffect(new net.minecraft.world.effect.MobEffectInstance(MobEffects.SLOW_FALLING, 60, 0));
-                    c.sound(SoundEvents.SLIME_JUMP, 1.5F, 0.8F);
-                    c.fx(ParticleTypes.ITEM_SLIME, c.owner.position().add(0.0D, 0.2D, 0.0D), 30, 0.5D, 0.1D);
-                    return true;
-                }),
-
-                ab("Mega Quake", "A giant jelly shockwave around you; you gain Jump Boost afterwards.", 8, 40, c -> {
-                    Vec3 center = c.owner.position();
-                    c.sound(SoundEvents.SLIME_SQUISH, 1.6F, 0.5F);
-                    c.ring(ParticleTypes.ITEM_SLIME, center.add(0.0D, 0.2D, 0.0D), 3.0D, 32);
-                    c.ring(ParticleTypes.ITEM_SLIME, center.add(0.0D, 0.2D, 0.0D), 6.0D, 56);
-                    c.ring(ParticleTypes.ITEM_SLIME, center.add(0.0D, 0.2D, 0.0D), 8.0D, 70);
-                    for (LivingEntity e : c.enemies(center.add(0.0D, 1.0D, 0.0D), 8.0D)) {
-                        c.hurt(e, c.dmg(10.0D));
-                        c.push(e, e.position().subtract(center), 2.0D, 0.8D);
-                        c.effect(e, MobEffects.MOVEMENT_SLOWDOWN, 80, 2);
-                    }
-                    c.owner.addEffect(new net.minecraft.world.effect.MobEffectInstance(MobEffects.JUMP, 200, 1));
-                    return true;
-                })
+                ab("Devour Touch", "The goo bites and clings: a hit, then it keeps eating the creature for a few seconds.", 1, 0.8, Goo::touch),
+                ab("Temperance Armor", "Toggle: wear the goo over your whole body. Hits barely get through (about a third; half for fire "
+                        + "and explosions), and anything that punches you gets the goo on it and starts being eaten - and passes it on "
+                        + "to whatever it touches. It's always hungry, though: you get hungry faster.", 2, 1, Goo::toggleArmor),
+                ab("Masquerade", "Look at a creature: the goo takes its shape. Everyone sees that creature instead of you, and monsters "
+                        + "look straight past you, for a minute - or until you hit something. Press again to drop it.", 3, 15, Goo::disguise),
+                ab("Devour", "The goo leaps off you onto the creature you're looking at (14 blocks) and swallows it: it's eaten alive "
+                        + "for 6 seconds, barely able to move - and anything that touches it gets eaten too.", 6, 25, Goo::devour)
         };
     }
 }

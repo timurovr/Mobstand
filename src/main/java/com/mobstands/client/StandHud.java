@@ -53,7 +53,11 @@ public final class StandHud {
             case SNIFFER -> new Palette(0x5FD18A, 0x3A1E14);    // mossy green on sniffer red-brown
             case PIGLIN -> new Palette(0xF2C94C, 0x3A2410);     // piglin gold
             case ZOMBIFIED_PIGLIN -> new Palette(0x8DBE6A, 0x2A1E1E); // rotten green
-            case SHULKER -> new Palette(0x7ED957, 0x1E2A14);
+            case SHULKER -> new Palette(0xB38BC9, 0x24162E); // shulker purple
+            case SILVERFISH -> new Palette(0xE8B84A, 0x1C1426); // zipper gold on pocket-dimension purple
+            case ILLUSIONER -> new Palette(0x8FB4F0, 0x1E2A4A); // illusioner blue
+            case LLAMA -> new Palette(0xD9B48A, 0x3A2A1A);      // rope brown
+            case GUARDIAN -> new Palette(0x5FC9B8, 0x12302C);   // prismarine
             case DOLPHIN -> new Palette(0x8FC9FF, 0x16222E);    // rain blue on storm grey    // C-Moon green on dark shell
         };
     }
@@ -105,7 +109,7 @@ public final class StandHud {
 
         // Wide enough for the name plus "Requiem"/"Lv 10", and for every ability with its cooldown timer.
         int w = 138;
-        w = Math.max(w, mc.font.width(t.standName()) + mc.font.width(t.requiem() ? "Requiem" : "Lv 10") + 12);
+        w = Math.max(w, mc.font.width(t.standName() + (t.pigAct() > 0 ? " " + t.actLabel() : "")) + mc.font.width(t.requiem() ? "Requiem" : "Lv 10") + 12);
         for (int slot = 0; slot < StandData.SLOTS; slot++) {
             Ability ab = t.ability(slot);
             if (ab.isEmpty()) continue;
@@ -125,7 +129,7 @@ public final class StandHud {
         g.fill(x - 4, y - 4, x + w + 4, y + panelH + 4, argb((int) (110 * v), accent));
         g.fill(x - 3, y - 3, x + w + 3, y + panelH + 3, argb((int) (205 * v), base));
 
-        g.drawString(mc.font, t.standName(), x, y, argb((int) (255 * v), accent), true);
+        g.drawString(mc.font, t.standName() + (t.pigAct() > 0 ? " " + t.actLabel() : ""), x, y, argb((int) (255 * v), accent), true);
         if (t.requiem()) {
             String rq = "Requiem";
             g.drawString(mc.font, rq, x + w - mc.font.width(rq), y, argb((int) (255 * v), accent), true);

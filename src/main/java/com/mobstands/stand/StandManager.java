@@ -44,13 +44,13 @@ public final class StandManager {
         java.util.function.Predicate<StandType> ok = t -> t != exclude && t.rollable() && reached(p, t.pool());
         int total = 0;
         for (StandType t : StandType.values()) {
-            if (ok.test(t)) total += t.rarity().weight();
+            if (ok.test(t)) total += 1; // every Stand is just as likely
         }
         if (total <= 0) return StandType.SLIME;
         int r = rng.nextInt(total);
         for (StandType t : StandType.values()) {
             if (!ok.test(t)) continue;
-            r -= t.rarity().weight();
+            r -= 1;
             if (r < 0) return t;
         }
         return StandType.SLIME;
@@ -60,6 +60,18 @@ public final class StandManager {
     public static void assign(ServerPlayer p, StandType type) {
         StandData d = data(p);
         removeEntity(p);
+        StandType prev = d.getType();
+        if (prev != null && prev.pigAct() > 0 && type.pigAct() > prev.pigAct()) {
+            // Moving up the Pig line (Pigstep's awakening): the Act you leave keeps its level.
+            d.actLevel[prev.pigAct()] = d.getLevel();
+            d.actXp[prev.pigAct()] = d.getXp();
+        } else if (type.pigAct() <= 1) {
+            // A brand new Stand (or a fresh Pig): no Acts unlocked.
+            d.pigActMax = 0;
+            java.util.Arrays.fill(d.actLevel, 0);
+            java.util.Arrays.fill(d.actXp, 0);
+            d.bodyRestored = false;
+        }
         d.setType(type);
         d.resetProgress();
         d.allayCount = 1;
@@ -70,29 +82,9 @@ public final class StandManager {
         summon(p);
     }
 
-    /**
-     * Pig Stand struck by lightning (you or the pig): it becomes a Zombified Piglin Stand, or a Piglin Stand if
-     * you have Fire Resistance at that moment. Level and XP carry over.
-     */
+    /** Pig Stand struck by lightning (you or the pig): ACT 2 (see {@link PigActs}). */
     public static void pigStruck(ServerPlayer p) {
-        StandData d = data(p);
-        if (d.getType() != StandType.PIG) return;
-        boolean fireproof = p.hasEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
-        StandType to = fireproof ? StandType.PIGLIN : StandType.ZOMBIFIED_PIGLIN;
-        StandEntity old = getStand(p);
-        net.minecraft.world.phys.Vec3 at = old != null ? old.position() : p.position();
-        ServerLevel level = (ServerLevel) p.level();
-        removeEntity(p);
-        d.setType(to);
-        d.setSummoned(false);
-        level.sendParticles(fireproof ? ParticleTypes.FLAME : ParticleTypes.ELECTRIC_SPARK, at.x, at.y + 0.6D, at.z, 30, 0.4D, 0.5D, 0.4D, 0.05D);
-        level.playSound(null, at.x, at.y, at.z, SoundEvents.PIG_DEATH, SoundSource.PLAYERS, 1.0F, 0.8F);
-        level.playSound(null, at.x, at.y, at.z, fireproof ? SoundEvents.PIGLIN_CELEBRATE : SoundEvents.ZOMBIFIED_PIGLIN_ANGRY,
-                SoundSource.PLAYERS, 1.2F, 1.0F);
-        summon(p);
-        p.displayClientMessage(net.minecraft.network.chat.Component.literal("Your Pig Stand became " + to.standName() + "!")
-                .withStyle(fireproof ? net.minecraft.ChatFormatting.GOLD : net.minecraft.ChatFormatting.DARK_GREEN), true);
-        sync(p);
+        PigActs.pigStruck(p);
     }
 
     // ------------------------------------------------------------------ summon / dismiss
@@ -141,7 +133,7 @@ public final class StandManager {
         TickScheduler.later(2, () -> spawnMobStand(pil, type));
     }
 
-    private static void spawnMobStand(net.minecraft.world.entity.LivingEntity owner, StandType type) {
+    public static void spawnMobStand(net.minecraft.world.entity.LivingEntity owner, StandType type) {
         if (!owner.isAlive() || owner.isRemoved() || !(owner.level() instanceof ServerLevel level)) return;
         // Already has one (e.g. it just changed chunks): don't double up.
         if (!level.getEntitiesOfClass(StandEntity.class, owner.getBoundingBox().inflate(16.0D),
@@ -173,6 +165,10 @@ public final class StandManager {
     private static void summon(ServerPlayer p, boolean announce) {
         StandData d = data(p);
         if (d.getType() == null || !p.isAlive()) return;
+        if (Curses.suppressed(p)) {
+            p.displayClientMessage(Curses.suppressedMessage(p), true);
+            return;
+        }
         d.setSummoned(true);
         if (getStand(p) == null) {
             ServerLevel level = (ServerLevel) p.level();
@@ -193,9 +189,9 @@ public final class StandManager {
                 s.setPosing(true); // you strike your pose as it appears, until you move
                 d.poseAnchor = p.position();
                 if (d.getType() == StandType.WARDEN_REQUIEM && !d.wodDarkOff) {
-                    // Wonder of Deep arrives: the light drains for everyone nearby - you included - for 3 seconds.
+                    // Wonder of Deep arrives: the light drains for everyone nearby for 3 seconds - everyone but you.
                     for (net.minecraft.world.entity.LivingEntity e : level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,
-                            p.getBoundingBox().inflate(WOD_DARK_RADIUS), x -> x.isAlive() && x.distanceToSqr(p) <= WOD_DARK_RADIUS * WOD_DARK_RADIUS)) {
+                            p.getBoundingBox().inflate(WOD_DARK_RADIUS), x -> x != p && x.isAlive() && x.distanceToSqr(p) <= WOD_DARK_RADIUS * WOD_DARK_RADIUS)) {
                         e.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.DARKNESS, 60, 0, false, false));
                     }
                 }
@@ -261,6 +257,60 @@ public final class StandManager {
                 }
             }
         });
+    }
+
+    /** Each Requiem's own arrival sound (on top of the usual summon sound), timed to its entrance. */
+    private static void requiemArrives(ServerLevel level, ServerPlayer p, StandType type) {
+        java.util.function.BiConsumer<net.minecraft.core.Holder<net.minecraft.sounds.SoundEvent>, float[]> now =
+                (snd, vp) -> level.playSound(null, p.getX(), p.getY(), p.getZ(), snd, SoundSource.PLAYERS, vp[0], vp[1]);
+        java.util.function.BiConsumer<net.minecraft.sounds.SoundEvent, float[]> now2 =
+                (snd, vp) -> level.playSound(null, p.getX(), p.getY(), p.getZ(), snd, SoundSource.PLAYERS, vp[0], vp[1]);
+        int land = StandEntity.FADE_TICKS;
+        switch (type) {
+            case ENDER_WORLD -> {
+                // A clock racing... and stopping dead.
+                for (int i = 0; i < land; i += 2) {
+                    final float pitch = 1.2F + i * 0.06F;
+                    TickScheduler.later(i, () -> now.accept(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_HAT, new float[]{0.9F, pitch}));
+                }
+                TickScheduler.later(land, () -> {
+                    now2.accept(net.minecraft.sounds.SoundEvents.BELL_BLOCK, new float[]{1.4F, 0.6F});
+                    now2.accept(net.minecraft.sounds.SoundEvents.BEACON_DEACTIVATE, new float[]{1.0F, 0.7F});
+                });
+            }
+            case GER -> {
+                // Rings closing in... a chime at zero.
+                now2.accept(net.minecraft.sounds.SoundEvents.BEACON_ACTIVATE, new float[]{1.0F, 0.8F});
+                now2.accept(net.minecraft.sounds.SoundEvents.AMETHYST_BLOCK_RESONATE, new float[]{1.2F, 0.6F});
+                TickScheduler.later(land, () -> {
+                    now2.accept(net.minecraft.sounds.SoundEvents.AMETHYST_BLOCK_CHIME, new float[]{1.6F, 0.8F});
+                    now2.accept(net.minecraft.sounds.SoundEvents.BELL_BLOCK, new float[]{1.0F, 1.2F});
+                });
+            }
+            case PIGLIN_REQUIEM -> {
+                // A bass line kicking in, the brute's grunt, and amethyst cracking up out of the ground.
+                float[] notes = {0.6F, 0.6F, 0.8F, 0.5F};
+                for (int i = 0; i < notes.length; i++) {
+                    final float pitch = notes[i];
+                    TickScheduler.later(i * 3, () -> now.accept(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_BASS, new float[]{1.4F, pitch}));
+                }
+                TickScheduler.later(2, () -> now2.accept(net.minecraft.sounds.SoundEvents.AMETHYST_CLUSTER_BREAK, new float[]{1.4F, 0.7F}));
+                TickScheduler.later(land, () -> now2.accept(net.minecraft.sounds.SoundEvents.PIGLIN_BRUTE_ANGRY, new float[]{1.2F, 0.8F}));
+            }
+            case CREEPER_REQUIEM -> {
+                // The bolt.
+                now2.accept(net.minecraft.sounds.SoundEvents.LIGHTNING_BOLT_THUNDER, new float[]{0.8F, 1.3F});
+                now2.accept(net.minecraft.sounds.SoundEvents.LIGHTNING_BOLT_IMPACT, new float[]{1.2F, 1.0F});
+                TickScheduler.later(land, () -> now2.accept(net.minecraft.sounds.SoundEvents.CREEPER_PRIMED, new float[]{1.2F, 0.7F}));
+            }
+            case WARDEN_REQUIEM -> {
+                // No fanfare: a far-off shriek, and a heartbeat.
+                now2.accept(net.minecraft.sounds.SoundEvents.SCULK_SHRIEKER_SHRIEK, new float[]{0.7F, 0.5F});
+                TickScheduler.later(land, () -> now2.accept(net.minecraft.sounds.SoundEvents.WARDEN_HEARTBEAT, new float[]{1.6F, 0.8F}));
+                TickScheduler.later(land + 12, () -> now2.accept(net.minecraft.sounds.SoundEvents.WARDEN_HEARTBEAT, new float[]{1.6F, 0.8F}));
+            }
+            default -> { }
+        }
     }
 
     private static void voice(ServerLevel level, StandEntity s, net.minecraft.sounds.SoundEvent sound, float volume, float pitch) {
@@ -457,15 +507,9 @@ public final class StandManager {
         sl.sendParticles(ParticleTypes.CLOUD, target.getX(), target.getY() + 0.1D, target.getZ(), 8, 0.3D, 0.05D, 0.3D, 0.03D);
     }
 
-    /**
-     * Hold X: your Allays let go. Looking at one of the enemies they're holding: just that one drops.
-     * Otherwise: they all drop.
-     */
-    public static void allayRelease(ServerPlayer p) {
-        StandData d = data(p);
-        if (d.getType() != StandType.ALLAY || d.allayHolds.isEmpty()) return;
+    /** The held enemy you're looking at, or null. */
+    private static StandData.AllayHold aimedHold(ServerPlayer p, StandData d) {
         ServerLevel sl = (ServerLevel) p.level();
-        // Which held enemy (if any) you're looking at.
         Vec3 eye = p.getEyePosition();
         Vec3 end = eye.add(p.getLookAngle().scale(32.0D));
         StandData.AllayHold aimed = null;
@@ -479,6 +523,39 @@ public final class StandManager {
                 aimed = h;
             }
         }
+        return aimed;
+    }
+
+    /** Hold X on an enemy your Allays are holding: it follows your crosshair until you let go of X. */
+    public static void allayDragStart(ServerPlayer p) {
+        StandData d = data(p);
+        if (d.getType() != StandType.ALLAY || d.allayHolds.isEmpty()) return;
+        StandData.AllayHold aimed = aimedHold(p, d);
+        if (aimed == null) {
+            p.displayClientMessage(Component.literal("Look at an enemy your Allays are holding to move it."), true);
+            return;
+        }
+        net.minecraft.world.entity.Entity e = ((ServerLevel) p.level()).getEntity(aimed.entityId);
+        if (e == null) return;
+        d.allayDragId = aimed.entityId;
+        d.allayLastPitch = p.getXRot();
+        d.allayDragDist = Math.max(3.0D, Math.min(24.0D, p.getEyePosition().distanceTo(e.position().add(0.0D, e.getBbHeight() * 0.5D, 0.0D))));
+        p.level().playSound(null, e.getX(), e.getY(), e.getZ(), SoundEvents.ALLAY_AMBIENT_WITH_ITEM, SoundSource.PLAYERS, 0.8F, 1.3F);
+    }
+
+    public static void allayDragEnd(ServerPlayer p) {
+        data(p).allayDragId = -1;
+    }
+
+    /**
+     * Spam X 3 times: your Allays let go. Looking at one of the enemies they're holding: just that one drops.
+     * Otherwise: they all drop.
+     */
+    public static void allayRelease(ServerPlayer p) {
+        StandData d = data(p);
+        if (d.getType() != StandType.ALLAY || d.allayHolds.isEmpty()) return;
+        ServerLevel sl = (ServerLevel) p.level();
+        StandData.AllayHold aimed = aimedHold(p, d);
         java.util.List<StandData.AllayHold> drop = aimed != null ? java.util.List.of(aimed) : new java.util.ArrayList<>(d.allayHolds);
         for (StandData.AllayHold h : drop) {
             net.minecraft.world.entity.Entity e = sl.getEntity(h.entityId);
@@ -533,6 +610,18 @@ public final class StandManager {
                 continue;
             }
             h.allays = Math.min(h.allays, budget); // lost duplicates also let go
+            if (h.entityId == d.allayDragId && AllaySlam.check(p, d, le, h.allays)) {
+                // Swung down hard while dragging: the Allays let go and hurl it at the ground.
+                d.allayDragId = -1;
+                it.remove();
+                continue;
+            }
+            if (h.entityId == d.allayDragId) {
+                // Being dragged: it floats where your crosshair points (the centre of its body on the line).
+                Vec3 to = p.getEyePosition().add(p.getLookAngle().scale(d.allayDragDist)).subtract(0.0D, le.getBbHeight() * 0.5D, 0.0D);
+                h.baseY = to.y - 2.0D - 1.5D * h.allays;
+                h.anchor = to;
+            }
             h.anchor = new Vec3(h.anchor.x, h.baseY + 2.0D + 1.5D * h.allays, h.anchor.z);
             budget -= h.allays;
             Vec3 pull = h.anchor.subtract(le.position());
@@ -1013,7 +1102,7 @@ public final class StandManager {
         com.mobstands.entity.SpinItemEntity best = null;
         double bestAng = 0.06D; // about 3.5 degrees off the crosshair, at most
         for (com.mobstands.entity.SpinItemEntity si : p.serverLevel().getEntitiesOfClass(com.mobstands.entity.SpinItemEntity.class,
-                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.ownedBy(p) && x.isSteel())) { // only Steel Balls answer the call
+                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.isAlive() && x.ownedBy(p) && x.isSteel())) { // only Steel Balls answer the call
             Vec3 to = si.position().add(0.0D, si.getBbHeight() * 0.5D, 0.0D).subtract(eye);
             double d = to.length();
             if (d < 1.0E-3D || d > RECALL_RANGE) continue;
@@ -1028,7 +1117,7 @@ public final class StandManager {
         net.minecraft.world.entity.item.ItemEntity bestItem = null;
         double itemAng = Double.MAX_VALUE;
         for (net.minecraft.world.entity.item.ItemEntity ie : p.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
-                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.getItem().is(com.mobstands.registry.ModItems.STEEL_BALL.get())
+                p.getBoundingBox().inflate(RECALL_RANGE), x -> x.isAlive() && x.getItem().is(com.mobstands.registry.ModItems.STEEL_BALL.get())
                         && (x.getOwner() == null || x.getOwner() == p))) {
             Vec3 to = ie.position().add(0.0D, 0.15D, 0.0D).subtract(eye);
             double d = to.length();
@@ -1145,7 +1234,8 @@ public final class StandManager {
     public static void pilotMove(ServerPlayer p, double x, double y, double z, float yRot, float xRot) {
         com.mobstands.entity.StandEntity s = getStand(p);
         if (s == null || !s.isPiloting()) return;
-        if (p.distanceToSqr(x, y, z) > (com.mobstands.entity.StandEntity.PILOT_RANGE + 40.0D) * (com.mobstands.entity.StandEntity.PILOT_RANGE + 40.0D)) return;
+        double r = com.mobstands.entity.StandEntity.pilotRange(s.getStandType()) + 40.0D;
+        if (p.distanceToSqr(x, y, z) > r * r) return;
         s.setPos(x, y, z);
         s.setYRot(yRot);
         s.setXRot(xRot);
@@ -1908,6 +1998,7 @@ public final class StandManager {
             endRush(p, d, false);
             return;
         }
+        Signatures.trample(p);
         if (p.getFoodData().getFoodLevel() <= 0 && !p.isCreative()) {
             endRush(p, d, true);
             p.displayClientMessage(Component.literal("You're out of breath (too hungry)."), true);
@@ -2013,9 +2104,16 @@ public final class StandManager {
 
     private static void useAbility(ServerPlayer p, int slot) {
         if (slot < 0 || slot >= StandData.SLOTS) return;
+        if (TimeStop.held(p)) return; // caught in stopped time: nothing
+        // A cursed Stand is smothering yours.
+        if (Curses.suppressed(p)) {
+            p.displayClientMessage(Curses.suppressedMessage(p), true);
+            return;
+        }
         // Piloting the Phantom: no punching or other moves - only the key that lands it.
         StandEntity flying = getStand(p);
-        if (flying != null && flying.isPiloting() && slot != 2) return;
+        // (the Squid's different: you steer it to place its rain, so its moves still work while you do)
+        if (flying != null && flying.isPiloting() && flying.getStandType() == StandType.PHANTOM && slot != 2) return;
         StandData d = data(p);
         StandType type = d.getType();
         if (type == null) {
@@ -2072,6 +2170,21 @@ public final class StandManager {
             addXp(p, 2);
             return;
         }
+        // Deep Dark Monarch: pressing Stop Heart again restarts your heart - cooldown or not.
+        if (type == StandType.WARDEN && slot == 4 && HeartStop.stopped(p)) {
+            HeartStop.restart(p);
+            return;
+        }
+        // Pigstep: pressing Another World again while you're in it takes you back - cooldown or not.
+        if (type == StandType.PIGLIN_REQUIEM && slot == 3 && OtherWorld.inside(p)) {
+            OtherWorld.leave(p);
+            return;
+        }
+        // Silver Fingers: while a zipper's got you, the keys do nothing - except Zip Away, which lets you back out.
+        if (type == StandType.SILVERFISH && Zipper.busy(p)) {
+            if (slot == 2) Zipper.leave(p);
+            return;
+        }
         if (d.cooldownEnd(slot) > now) {
             if (slot == 0 && type == StandType.SKELETON) {
                 d.doubleShotFumbled = true; // clicked too early: no bonus arrow this time
@@ -2095,7 +2208,7 @@ public final class StandManager {
             return;
         }
         d.setCooldownEnd(slot, now + ability.cooldownTicks(d.getLevel()));
-        stand.playAnim(slot);
+        if (!(type == StandType.GER && slot == 3)) stand.playAnim(slot); // (Iron Shot: GER doesn't move - the nugget does)
         if (slot == 0) d.summonPunchUntil = 0L;
         // Allay Hold / Roam toggle give XP only for real use (a new enemy grabbed), not for spamming the key.
         if (!(type == StandType.ALLAY && slot >= 2)) addXp(p, slot == 0 ? 1 : slot == 3 ? 8 : 3);

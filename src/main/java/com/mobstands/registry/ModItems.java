@@ -22,5 +22,11 @@ public final class ModItems {
     public static final DeferredItem<com.mobstands.item.SpinScrollItem> SPIN_SCROLL = ITEMS.register("spin_scroll",
             () -> new com.mobstands.item.SpinScrollItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
 
+    /** Stand tools: only exist in your hand while your Stand's out (see StandTools). */
+    public static final DeferredItem<com.mobstands.item.StandToolItem> LASSO = ITEMS.register("lasso",
+            () -> new com.mobstands.item.StandToolItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE), com.mobstands.stand.StandTools.LASSO));
+    public static final DeferredItem<com.mobstands.item.StandToolItem> REEF_ROD = ITEMS.register("reef_rod",
+            () -> new com.mobstands.item.StandToolItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE), com.mobstands.stand.StandTools.ROD));
+
     private ModItems() {}
 }

@@ -7,18 +7,17 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.entity.npc.AbstractVillager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 
-/** Shared damage / targeting rules so Stands never hurt their owner, pets or villagers. */
+/** Shared damage / targeting rules so Stands never hurt their owner or pets. */
 public final class StandCombat {
     private StandCombat() {}
 
     public static boolean valid(ServerPlayer owner, Entity e) {
         if (!(e instanceof LivingEntity le)) return false;
         if (e == owner || !le.isAlive() || le.isSpectator() || le.isInvulnerable()) return false;
-        if (e instanceof ArmorStand || e instanceof AbstractVillager) return false;
+        if (e instanceof ArmorStand) return false; // (villagers and traders are fair game now)
         if (e instanceof OwnableEntity oe && owner.getUUID().equals(oe.getOwnerUUID())) return false;
         if (e instanceof Player p && (!owner.canHarmPlayer(p) || p.isCreative())) return false;
         return true;
@@ -43,7 +42,41 @@ public final class StandCombat {
     public static boolean hurt(ServerPlayer owner, LivingEntity target, float amount) {
         credit(owner, target);
         DamageSource src = owner.level().damageSources().playerAttack(owner);
-        return target.hurt(src, amount);
+        standHits++;
+        try {
+            return target.hurt(src, amount);
+        } finally {
+            standHits--;
+        }
+    }
+
+    /** > 0 while a Stand's own hit is landing (so it isn't mistaken for a plain sword swing). */
+    private static int standHits;
+
+    /** No single Stand hit takes more than this share of a player's health: nothing one-taps a player. */
+    public static final float PVP_CAP = 0.35F;
+
+    /**
+     * A player is about to be hit by someone else's Stand: the big finishers (Primer, Iron Shot, Big Bang, time-stop
+     * damage landing all at once...) are capped so they can't kill a player in one go. Plain sword swings and arrows
+     * from a normal bow are left alone - that's just PvP.
+     */
+    public static float pvpCap(LivingEntity victim, DamageSource src, float amount) {
+        if (!(victim instanceof Player) || amount <= 0.0F) return amount;
+        if (src.is(net.minecraft.tags.DamageTypeTags.BYPASSES_INVULNERABILITY)) return amount;
+        Entity att = src.getEntity(), direct = src.getDirectEntity();
+        if (att == victim) return amount;
+        boolean standUser = att instanceof ServerPlayer sp && StandManager.data(sp).getType() != null;
+        boolean fromStand = att instanceof com.mobstands.entity.StandEntity || direct instanceof com.mobstands.entity.StandEntity
+                || direct instanceof com.mobstands.entity.StandProjectile;
+        if (!standUser && !fromStand) return amount;
+        if (!fromStand && standHits == 0) {
+            // their own sword or fist
+            if (direct == att && src.is(net.minecraft.world.damagesource.DamageTypes.PLAYER_ATTACK)) return amount;
+            // an arrow or trident they shot themselves
+            if (direct instanceof net.minecraft.world.entity.projectile.Projectile) return amount;
+        }
+        return Math.min(amount, victim.getMaxHealth() * PVP_CAP);
     }
 
     public static boolean hurtSonic(ServerPlayer owner, LivingEntity target, float amount) {

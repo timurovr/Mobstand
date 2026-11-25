@@ -45,6 +45,16 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public final java.util.Map<Integer, long[]> dupeHits = new java.util.HashMap<>();
     /** Enemies your Allays are holding up in the air. */
     public final java.util.List<AllayHold> allayHolds = new java.util.ArrayList<>();
+    /** Allay: the held enemy you're dragging with your crosshair (-1 = none), and how far out it floats. */
+    public int allayDragId = -1;
+    /** Pig line: the highest Act unlocked (0 = not on the Pig line), and each Act's own level and XP (index = Act). */
+    public int pigActMax;
+    public final int[] actLevel = new int[5], actXp = new int[5];
+    /** Act 2 -> 3 ritual, step 1 done: a Totem of Undying caught the lightning and restored the body. */
+    public boolean bodyRestored;
+    public double allayDragDist;
+    /** Your view's pitch last tick while dragging (a hard swing down = Slam). */
+    public float allayLastPitch;
 
     public static final class AllayHold {
         public int entityId;
@@ -108,6 +118,8 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public long spinSlashAt = -1000L;
     /** The Spin technique (learned from a Steel Ball): separate from the Stand, with its own level. */
     public boolean spinLearned;
+    /** Weaver of Webs: the Möbius Strip has awakened at least once (see Mobius). */
+    public boolean mobiusLearned;
     /** Requiem Trials: steps done (bit flags) and a counter (see RequiemTrials). Whether you've reached the End. */
     public int trialFlags, trialCount;
     public boolean reachedEnd;
@@ -145,6 +157,8 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public long timeStopStart = -1000L, timeStopEnd = -1000L;
     /** The Ender World's Time Skip: when it last happened (synced: a quick inverted-colour flash). */
     public long timeSkipAt = -1000L;
+    /** Stop Heart: when your heart was stopped, and when it starts again (game time). */
+    public long heartStopAt = -1000L, heartStopEnd = -1000L;
     /** Axolotl's Neoteny (Mandom): when the last rewind happened (synced: a quick drained-colour flash). */
     public long mandomAt = -1000L;
     /** Spin rocket (two spins thrown at your feet): when it launched you; no fall damage until you land. */
@@ -164,7 +178,10 @@ public class StandData implements INBTSerializable<CompoundTag> {
     public int comboHit2 = -1;
 
     public StandType getType() { return type; }
-    public void setType(StandType type) { this.type = type; }
+    public void setType(StandType type) {
+        this.type = type;
+        if (type != null && type.pigAct() > pigActMax) pigActMax = type.pigAct(); // a new Act unlocked
+    }
     public int getLevel() { return level; }
     public void setLevel(int level) { this.level = Math.max(1, Math.min(MAX_LEVEL, level)); }
     public int getXp() { return xp; }
@@ -241,12 +258,15 @@ public class StandData implements INBTSerializable<CompoundTag> {
         tag.putLong("SpinSlash", spinSlashAt);
         tag.putLong("TsStart", timeStopStart);
         tag.putBoolean("SpinLearned", spinLearned);
+        tag.putBoolean("MobiusLearned", mobiusLearned);
         tag.putBoolean("AuraOff", auraOff);
         tag.putBoolean("WodDarkOff", wodDarkOff);
         tag.putInt("SpinLevel", spinLevel);
         tag.putInt("SpinXp", spinXp);
         tag.putLong("TsEnd", timeStopEnd);
         tag.putLong("TsSkip", timeSkipAt);
+        tag.putLong("HeartAt", heartStopAt);
+        tag.putLong("HeartEnd", heartStopEnd);
         tag.putLong("Mandom", mandomAt);
         tag.putLong("OffSpinStart", offSpinStart);
         tag.putInt("TrialFlags", trialFlags);
@@ -260,12 +280,17 @@ public class StandData implements INBTSerializable<CompoundTag> {
         tag.putString("Sounds", String.join(",", stolenSounds));
         tag.putInt("SoundSel", soundSel);
         tag.putBoolean("RainWalk", rainWalk);
+        tag.putInt("PigActMax", pigActMax);
+        tag.putIntArray("ActLevels", actLevel);
+        tag.putIntArray("ActXp", actXp);
+        tag.putBoolean("BodyRestored", bodyRestored);
         return tag;
     }
 
     public void load(CompoundTag tag) {
         type = StandType.byId(tag.getString("Type"));
         spinLearned = tag.getBoolean("SpinLearned");
+        mobiusLearned = tag.getBoolean("MobiusLearned");
         auraOff = tag.getBoolean("AuraOff");
         wodDarkOff = tag.getBoolean("WodDarkOff");
         spinLevel = Math.max(1, Math.min(SPIN_MAX_LEVEL, tag.getInt("SpinLevel")));
@@ -293,6 +318,8 @@ public class StandData implements INBTSerializable<CompoundTag> {
         timeStopStart = tag.contains("TsStart") ? tag.getLong("TsStart") : -1000L;
         timeStopEnd = tag.contains("TsEnd") ? tag.getLong("TsEnd") : -1000L;
         timeSkipAt = tag.contains("TsSkip") ? tag.getLong("TsSkip") : -1000L;
+        heartStopAt = tag.contains("HeartAt") ? tag.getLong("HeartAt") : -1000L;
+        heartStopEnd = tag.contains("HeartEnd") ? tag.getLong("HeartEnd") : -1000L;
         mandomAt = tag.contains("Mandom") ? tag.getLong("Mandom") : -1000L;
         offSpinStart = tag.getLong("OffSpinStart");
         trialFlags = tag.getInt("TrialFlags");
@@ -300,6 +327,15 @@ public class StandData implements INBTSerializable<CompoundTag> {
         reachedEnd = tag.getBoolean("ReachedEnd");
         reachedNether = tag.getBoolean("ReachedNether");
         rainWalk = tag.getBoolean("RainWalk");
+        pigActMax = tag.getInt("PigActMax");
+        int[] al = tag.getIntArray("ActLevels"), ax = tag.getIntArray("ActXp");
+        for (int i = 0; i < 5; i++) {
+            actLevel[i] = i < al.length ? al[i] : 0;
+            actXp[i] = i < ax.length ? ax[i] : 0;
+        }
+        bodyRestored = tag.getBoolean("BodyRestored");
+        // Worlds from before Acts: whatever Pig-line Stand you have counts as unlocked.
+        if (type != null && type.pigAct() > pigActMax) pigActMax = type.pigAct();
         sniffMisses = tag.getInt("SniffMisses");
         sniffVisited.clear();
         net.minecraft.nbt.ListTag sv = tag.getList("SniffVisited", net.minecraft.nbt.Tag.TAG_STRING);

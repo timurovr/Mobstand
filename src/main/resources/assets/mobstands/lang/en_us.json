@@ -23,5 +23,10 @@
   "item.mobstands.steel_ball": "Steel Ball",
   "item.mobstands.spin_scroll": "Spin Scroll",
   "entity.mobstands.heart_attack": "Sheer Heart Attack",
-  "subtitles.mobstands.stand.lazarus": "Life returns"
+  "subtitles.mobstands.stand.lazarus": "Life returns",
+  "subtitles.mobstands.stand.bites_the_dust": "Bites the Dust",
+  "subtitles.mobstands.stand.zipper": "Zipper runs",
+  "entity.mobstands.zipper": "Zipper",
+  "item.mobstands.lasso": "Oh! Lonesome Lasso",
+  "item.mobstands.reef_rod": "Reef Boy's Rod"
 }

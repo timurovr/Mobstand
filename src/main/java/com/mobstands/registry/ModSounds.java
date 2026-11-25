@@ -30,10 +30,15 @@ public final class ModSounds {
     public static final DeferredHolder<SoundEvent, SoundEvent> SPIN_CRACKLE = register("stand.spin_crackle");
     public static final DeferredHolder<SoundEvent, SoundEvent> TIME_STOP = register("stand.time_stop");
     public static final DeferredHolder<SoundEvent, SoundEvent> MANDOM = register("stand.mandom");
+    /** Bites the Dust: the switch, a clock ticking backwards over a tape-rewind squeal, then the snap. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> BITES_THE_DUST = register("stand.bites_the_dust");
     /** Lazarus Smile's Lazarus: the dead get back up. */
     public static final DeferredHolder<SoundEvent, SoundEvent> LAZARUS = register("stand.lazarus");
     /** GER: Return to Zero. */
     public static final DeferredHolder<SoundEvent, SoundEvent> GER_RETURN_TO_ZERO = register("ger.return_to_zero");
+
+    /** Silver Fingers: a zipper running open or shut. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> ZIPPER = register("stand.zipper");
 
     private static DeferredHolder<SoundEvent, SoundEvent> register(String name) {
         return SOUNDS.register(name, () -> SoundEvent.createVariableRangeEvent(MobStands.id(name)));

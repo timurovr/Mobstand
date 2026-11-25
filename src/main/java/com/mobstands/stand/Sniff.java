@@ -71,6 +71,8 @@ public final class Sniff {
             p.displayClientMessage(Component.literal("There's nothing here to sniff out.").withStyle(s -> s.withColor(0xAAAAAA)), true);
             return false;
         }
+        // Every roll costs a spyglass: Hermit Purple's camera.
+        if (!Hermit.sacrifice(p)) return false;
         // The further from the Overworld, the weaker its nose.
         if (sl.dimension() == net.minecraft.world.level.Level.END) return endSniff(p);
         boolean nether = sl.dimension() == net.minecraft.world.level.Level.NETHER;
@@ -137,7 +139,8 @@ public final class Sniff {
         p.displayClientMessage(Component.literal("Your Sniffer caught the scent of a " + name + ": " + dist + " blocks " + direction(p, at)
                 + " (" + at.getX() + ", " + at.getZ() + "). Follow the trail!").withStyle(s -> s.withColor(0x5FD18A)), false);
         sl.playSound(null, p.getX(), p.getY(), p.getZ(), SoundEvents.SNIFFER_HAPPY, SoundSource.PLAYERS, 1.0F, 1.0F);
-        TRAILS.put(p.getUUID(), new Trail(sl, at, now + TRAIL_TICKS, false));
+        TRAILS.put(p.getUUID(), new Trail(sl, at, Long.MAX_VALUE, false)); // until you get there
+        if (id.equals("minecraft:mansion")) TimeEvoker.mark(p, sl, at);
     }
 
     /**
@@ -257,10 +260,11 @@ public final class Sniff {
         Trail t = TRAILS.get(p.getUUID());
         if (t == null) return;
         long now = p.serverLevel().getGameTime();
-        if (p.serverLevel() != t.level() || now > t.until()) {
+        if (now > t.until()) {
             TRAILS.remove(p.getUUID());
             return;
         }
+        if (p.serverLevel() != t.level()) return; // (in another dimension: it waits for you to come back)
         if (now % (t.flash() ? 2L : 5L) != 0L) return;
         Vec3 to = new Vec3(t.target().getX() + 0.5D - p.getX(), 0.0D, t.target().getZ() + 0.5D - p.getZ());
         double len = to.length();

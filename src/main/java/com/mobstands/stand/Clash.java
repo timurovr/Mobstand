@@ -191,7 +191,7 @@ public final class Clash {
             sw.lunge(l.position().add(0.0D, 1.0D, 0.0D), 6);
             sw.playAnim(1);
         }
-        float dmg = (float) (8.0D * wd.getType().rarity().power() * (1.0D + 0.06D * (wd.getLevel() - 1)));
+        float dmg = (float) (8.0D * StandClass.power(wd.getType()) * (1.0D + 0.06D * (wd.getLevel() - 1)));
         l.invulnerableTime = 0;
         StandCombat.hurt(w, l, dmg);
         StandCombat.push(l, flat(l.position().subtract(w.position())), 2.4D, 0.6D);
